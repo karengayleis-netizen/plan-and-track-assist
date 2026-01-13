@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,8 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { GRADES } from '@/types';
-import { Upload, Search, Sparkles } from 'lucide-react';
+import { Upload, Search, Sparkles, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+
+interface AnalyzeSchoolDataResponse {
+  recommendations: string;
+}
 
 export function AdminTab() {
   const { students } = useStudents();
@@ -22,6 +28,11 @@ export function AdminTab() {
   const [staffSearch, setStaffSearch] = useState('');
   const [staffUid, setStaffUid] = useState('');
   const [canWrite, setCanWrite] = useState(false);
+  
+  // AI Strategy state
+  const [selectedProgram, setSelectedProgram] = useState('fi');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState('');
 
   // Calculate stats
   const totalStudents = students.length;
@@ -52,8 +63,43 @@ export function AdminTab() {
     setClassName('');
   };
 
-  const handleAnalyze = () => {
-    toast.info('AI analysis coming soon');
+  const handleAnalyze = async () => {
+    setIsAnalyzing(true);
+    
+    try {
+      const analyzeSchoolData = httpsCallable<object, AnalyzeSchoolDataResponse>(
+        functions, 
+        'analyzeSchoolData'
+      );
+      
+      const atRiskStudents = students.filter(s => s.isHighNeed).map(s => ({
+        id: s.id,
+        studentNumber: s.studentNumber,
+        grade: s.grade,
+        homeroom: s.homeroom
+      }));
+      
+      const result = await analyzeSchoolData({
+        program: selectedProgram,
+        schoolStats: {
+          totalStudents,
+          totalBenchmarks,
+          atRiskCount,
+          avgDataPerStudent: parseFloat(avgDataPerStudent)
+        },
+        gradeAnalytics,
+        atRiskStudents
+      });
+      
+      setAiRecommendations(result.data.recommendations);
+      toast.success('AI analysis complete!');
+    } catch (error: any) {
+      console.error('Error analyzing school data:', error);
+      const errorMessage = error?.message || 'Failed to analyze. Please try again.';
+      toast.error(errorMessage);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -364,7 +410,7 @@ export function AdminTab() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
-              <Select defaultValue="fi">
+              <Select value={selectedProgram} onValueChange={setSelectedProgram}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -373,16 +419,26 @@ export function AdminTab() {
                   <SelectItem value="en">English</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={handleAnalyze}>
-                <Sparkles className="h-4 w-4 mr-2" />
-                Analyze
+              <Button onClick={handleAnalyze} disabled={isAnalyzing}>
+                {isAnalyzing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4 mr-2" />
+                )}
+                {isAnalyzing ? 'Analyzing...' : 'Analyze'}
               </Button>
             </div>
             <div className="border rounded-lg p-4">
               <h4 className="font-medium mb-2">Resource & Leadership Recommendations</h4>
-              <p className="text-muted-foreground text-sm">
-                Run analysis to generate AI-powered recommendations.
-              </p>
+              {aiRecommendations ? (
+                <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm">
+                  {aiRecommendations}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  Run analysis to generate AI-powered recommendations.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
