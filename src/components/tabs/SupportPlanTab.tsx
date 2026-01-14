@@ -60,8 +60,8 @@ export function SupportPlanTab() {
     
     try {
       const generateSupportPlan = httpsCallable<object, GenerateSupportPlanResponse>(
-        functions, 
-        'generateSupportPlan'
+        functions,
+        "generateSupportPlanHttpCallable"
       );
       
       const result = await generateSupportPlan({
