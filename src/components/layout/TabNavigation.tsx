@@ -8,15 +8,16 @@ import {
   Settings 
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
-const tabs = [
-  { id: 'students', label: 'Students', icon: Users },
-  { id: 'benchmarks', label: 'Benchmarks', icon: BarChart3 },
-  { id: 'markbook', label: 'Markbook', icon: BookOpen },
-  { id: 'insights', label: 'Insights', icon: LineChart },
-  { id: 'triangulation', label: 'Triangulation', icon: Triangle },
-  { id: 'support-plan', label: 'Support Plan', icon: FileText },
-  { id: 'admin', label: 'Admin', icon: Settings },
+const allTabs = [
+  { id: 'students', label: 'Students', icon: Users, requiresAdmin: false },
+  { id: 'benchmarks', label: 'Benchmarks', icon: BarChart3, requiresAdmin: false },
+  { id: 'markbook', label: 'Markbook', icon: BookOpen, requiresAdmin: false },
+  { id: 'insights', label: 'Insights', icon: LineChart, requiresAdmin: false },
+  { id: 'triangulation', label: 'Triangulation', icon: Triangle, requiresAdmin: false },
+  { id: 'support-plan', label: 'Support Plan', icon: FileText, requiresAdmin: false },
+  { id: 'admin', label: 'Admin', icon: Settings, requiresAdmin: true },
 ];
 
 interface TabNavigationProps {
@@ -25,11 +26,21 @@ interface TabNavigationProps {
 }
 
 export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
+  const { user } = useAuth();
+  
+  // Filter tabs based on user role - Admin tab only visible to admins
+  const visibleTabs = allTabs.filter(tab => {
+    if (tab.requiresAdmin) {
+      return user?.role === 'admin';
+    }
+    return true;
+  });
+
   return (
     <nav className="border-b border-border bg-card/30">
       <div className="container mx-auto px-4">
         <div className="flex overflow-x-auto scrollbar-hide">
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             
