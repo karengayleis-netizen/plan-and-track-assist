@@ -93,10 +93,8 @@ export function AdminTab() {
       
       setAiRecommendations(result.data.recommendations);
       toast.success('AI analysis complete!');
-    } catch (error: any) {
-      console.error('Error analyzing school data:', error);
-      const errorMessage = error?.message || 'Failed to analyze. Please try again.';
-      toast.error(errorMessage);
+    } catch {
+      toast.error('Failed to analyze. Please try again.');
     } finally {
       setIsAnalyzing(false);
     }

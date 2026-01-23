@@ -20,9 +20,8 @@ export function useStudents() {
       })) as Student[];
       setStudents(studentsData);
       setError(null);
-    } catch (err) {
+    } catch {
       setError('Failed to fetch students');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -37,10 +36,9 @@ export function useStudents() {
       });
       await fetchStudents();
       return docRef.id;
-    } catch (err) {
+    } catch {
       setError('Failed to add student');
-      console.error(err);
-      throw err;
+      throw new Error('Failed to add student');
     }
   };
 
@@ -51,10 +49,9 @@ export function useStudents() {
         updatedAt: new Date(),
       });
       await fetchStudents();
-    } catch (err) {
+    } catch {
       setError('Failed to update student');
-      console.error(err);
-      throw err;
+      throw new Error('Failed to update student');
     }
   };
 
@@ -62,10 +59,9 @@ export function useStudents() {
     try {
       await deleteDoc(doc(db, 'students', id));
       await fetchStudents();
-    } catch (err) {
+    } catch {
       setError('Failed to delete student');
-      console.error(err);
-      throw err;
+      throw new Error('Failed to delete student');
     }
   };
 
