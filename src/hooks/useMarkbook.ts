@@ -1,28 +1,49 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, DocumentData } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { MarkbookEntry } from '@/types';
+import { MarkbookEntrySchema, validateData } from '@/lib/validations';
+import { useAuth } from './useAuth';
 
 export function useMarkbook(studentId?: string) {
   const [entries, setEntries] = useState<MarkbookEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const fetchEntries = async () => {
     try {
       setLoading(true);
-      let q = collection(db, 'markbook');
+      
+      // Build query with proper filtering
+      let markbookQuery;
       
       if (studentId) {
-        q = query(collection(db, 'markbook'), where('studentId', '==', studentId)) as any;
+        // Filter by specific student
+        markbookQuery = query(
+          collection(db, 'markbook'),
+          where('studentId', '==', studentId)
+        );
+      } else if (user?.schoolId) {
+        // Filter by user's school for data isolation
+        markbookQuery = query(
+          collection(db, 'markbook'),
+          where('schoolId', '==', user.schoolId)
+        );
+      } else {
+        // Fallback: fetch all (Firestore rules will still enforce access)
+        markbookQuery = collection(db, 'markbook');
       }
       
-      const querySnapshot = await getDocs(q);
-      const entriesData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().date?.toDate(),
-      })) as MarkbookEntry[];
+      const querySnapshot = await getDocs(markbookQuery);
+      const entriesData = querySnapshot.docs.map(docSnapshot => {
+        const data = docSnapshot.data() as DocumentData;
+        return {
+          id: docSnapshot.id,
+          ...data,
+          date: data.date?.toDate(),
+        } as MarkbookEntry;
+      });
       setEntries(entriesData);
       setError(null);
     } catch {
@@ -33,8 +54,19 @@ export function useMarkbook(studentId?: string) {
   };
 
   const addEntry = async (entry: Omit<MarkbookEntry, 'id'>) => {
+    // Validate input data
+    const validation = validateData(MarkbookEntrySchema, entry);
+    if (!validation.success) {
+      const errorMsg = 'error' in validation ? validation.error : 'Validation failed';
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
-      const docRef = await addDoc(collection(db, 'markbook'), entry);
+      const docRef = await addDoc(collection(db, 'markbook'), {
+        ...validation.data,
+        schoolId: user?.schoolId, // Associate with user's school
+      });
       await fetchEntries();
       return docRef.id;
     } catch {
@@ -44,8 +76,10 @@ export function useMarkbook(studentId?: string) {
   };
 
   useEffect(() => {
-    fetchEntries();
-  }, [studentId]);
+    if (user) {
+      fetchEntries();
+    }
+  }, [studentId, user?.schoolId]);
 
   return { entries, loading, error, addEntry, refetch: fetchEntries };
 }

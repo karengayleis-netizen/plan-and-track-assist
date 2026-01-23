@@ -1,23 +1,42 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, DocumentData } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Student } from '@/types';
+import { StudentSchema, validateData } from '@/lib/validations';
+import { useAuth } from './useAuth';
 
 export function useStudents() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const querySnapshot = await getDocs(collection(db, 'students'));
-      const studentsData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
-      })) as Student[];
+      
+      // If user has a schoolId, filter by school for data isolation
+      let studentsQuery;
+      if (user?.schoolId) {
+        studentsQuery = query(
+          collection(db, 'students'),
+          where('schoolId', '==', user.schoolId)
+        );
+      } else {
+        // Fallback: fetch all (Firestore rules will still enforce access)
+        studentsQuery = collection(db, 'students');
+      }
+      
+      const querySnapshot = await getDocs(studentsQuery);
+      const studentsData = querySnapshot.docs.map(docSnapshot => {
+        const data = docSnapshot.data() as DocumentData;
+        return {
+          id: docSnapshot.id,
+          ...data,
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+        } as Student;
+      });
       setStudents(studentsData);
       setError(null);
     } catch {
@@ -28,9 +47,18 @@ export function useStudents() {
   };
 
   const addStudent = async (student: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>) => {
+    // Validate input data
+    const validation = validateData(StudentSchema, student);
+    if (!validation.success) {
+      const errorMsg = 'error' in validation ? validation.error : 'Validation failed';
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
       const docRef = await addDoc(collection(db, 'students'), {
-        ...student,
+        ...validation.data,
+        schoolId: user?.schoolId, // Associate with user's school
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -43,6 +71,17 @@ export function useStudents() {
   };
 
   const updateStudent = async (id: string, updates: Partial<Student>) => {
+    // Basic validation for updates - ensure strings aren't too long
+    if (updates.firstName && updates.firstName.length > 50) {
+      throw new Error('First name must be 50 characters or less');
+    }
+    if (updates.lastName && updates.lastName.length > 50) {
+      throw new Error('Last name must be 50 characters or less');
+    }
+    if (updates.studentNumber && updates.studentNumber.length > 20) {
+      throw new Error('Student number must be 20 characters or less');
+    }
+
     try {
       await updateDoc(doc(db, 'students', id), {
         ...updates,
@@ -66,8 +105,10 @@ export function useStudents() {
   };
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    if (user) {
+      fetchStudents();
+    }
+  }, [user?.schoolId]);
 
   return { students, loading, error, addStudent, updateStudent, deleteStudent, refetch: fetchStudents };
 }
