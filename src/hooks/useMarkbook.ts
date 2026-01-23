@@ -25,9 +25,8 @@ export function useMarkbook(studentId?: string) {
       })) as MarkbookEntry[];
       setEntries(entriesData);
       setError(null);
-    } catch (err) {
+    } catch {
       setError('Failed to fetch markbook entries');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -38,10 +37,9 @@ export function useMarkbook(studentId?: string) {
       const docRef = await addDoc(collection(db, 'markbook'), entry);
       await fetchEntries();
       return docRef.id;
-    } catch (err) {
+    } catch {
       setError('Failed to add markbook entry');
-      console.error(err);
-      throw err;
+      throw new Error('Failed to add markbook entry');
     }
   };
 

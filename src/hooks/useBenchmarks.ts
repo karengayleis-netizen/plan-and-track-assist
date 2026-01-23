@@ -26,9 +26,8 @@ export function useBenchmarks(studentId?: string) {
       })) as Benchmark[];
       setBenchmarks(benchmarksData);
       setError(null);
-    } catch (err) {
+    } catch {
       setError('Failed to fetch benchmarks');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -42,10 +41,9 @@ export function useBenchmarks(studentId?: string) {
       });
       await fetchBenchmarks();
       return docRef.id;
-    } catch (err) {
+    } catch {
       setError('Failed to add benchmark');
-      console.error(err);
-      throw err;
+      throw new Error('Failed to add benchmark');
     }
   };
 
