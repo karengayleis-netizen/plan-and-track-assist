@@ -14,11 +14,23 @@ service cloud.firestore {
         get(/databases/$(database)/documents/user_roles/$(request.auth.uid)).data.role == 'admin';
     }
     
-    // Helper function to check if user belongs to the same school
-    function belongsToSchool(schoolId) {
+    // Helper function to get user's school ID
+    function getUserSchool() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId;
+    }
+    
+    // Helper function to check if user belongs to the same school as the resource
+    function belongsToSameSchool() {
       return isAuthenticated() && 
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId == schoolId;
+        resource.data.schoolId == getUserSchool();
+    }
+    
+    // Helper function to check if new resource matches user's school
+    function newResourceMatchesUserSchool() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        request.resource.data.schoolId == getUserSchool();
     }
     
     // User profiles - users can only read/write their own profile
@@ -39,66 +51,71 @@ service cloud.firestore {
       allow delete: if isAdmin() && request.auth.uid != userId;
     }
     
-    // Students collection - requires authentication and school membership
+    // Students collection - requires authentication AND school membership
     match /students/{studentId} {
-      allow read: if isAuthenticated();
+      // Read only students from user's school (or admin can read all)
+      allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && 
+        newResourceMatchesUserSchool() &&
         request.resource.data.keys().hasAll(['studentNumber', 'firstName', 'lastName', 'grade']) &&
         request.resource.data.studentNumber is string &&
         request.resource.data.studentNumber.size() <= 20 &&
         request.resource.data.firstName.size() <= 50 &&
         request.resource.data.lastName.size() <= 50;
-      allow update: if isAuthenticated();
+      allow update: if isAuthenticated() && belongsToSameSchool();
       allow delete: if isAdmin();
     }
     
-    // Benchmarks collection - requires authentication
+    // Benchmarks collection - requires authentication AND school membership
     match /benchmarks/{benchmarkId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && 
+        newResourceMatchesUserSchool() &&
         request.resource.data.keys().hasAll(['studentId', 'assessmentType', 'score']) &&
         request.resource.data.studentId is string &&
         request.resource.data.assessmentType is string;
-      allow update: if isAuthenticated();
+      allow update: if isAuthenticated() && belongsToSameSchool();
       allow delete: if isAdmin();
     }
     
-    // Markbook collection - requires authentication
+    // Markbook collection - requires authentication AND school membership
     match /markbook/{entryId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && 
+        newResourceMatchesUserSchool() &&
         request.resource.data.keys().hasAll(['studentId', 'subject', 'taskName', 'score']) &&
         request.resource.data.studentId is string &&
         request.resource.data.subject is string;
-      allow update: if isAuthenticated();
+      allow update: if isAuthenticated() && belongsToSameSchool();
       allow delete: if isAdmin();
     }
     
-    // Classes collection - requires authentication
+    // Classes collection - requires authentication AND school membership
     match /classes/{classId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
+      allow create: if isAuthenticated() && newResourceMatchesUserSchool();
+      allow update: if isAuthenticated() && belongsToSameSchool();
       allow delete: if isAdmin();
     }
     
     // Schools collection - for multi-tenant support
     match /schools/{schoolId} {
-      allow read: if isAuthenticated();
+      // Users can only read their own school
+      allow read: if isAuthenticated() && getUserSchool() == schoolId;
       allow write: if isAdmin();
       
       // School members subcollection
       match /members/{memberId} {
-        allow read: if isAuthenticated();
+        allow read: if isAuthenticated() && getUserSchool() == schoolId;
         allow write: if isAdmin();
       }
     }
     
-    // Support plans - sensitive data, requires authentication
+    // Support plans - sensitive data, requires authentication AND school membership
     match /support_plans/{planId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
+      allow create: if isAuthenticated() && newResourceMatchesUserSchool();
+      allow update: if isAuthenticated() && belongsToSameSchool();
       allow delete: if isAdmin();
     }
   }
