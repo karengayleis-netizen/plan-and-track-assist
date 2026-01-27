@@ -11,6 +11,7 @@ import { User } from '@/types';
 
 interface AuthContextType {
   user: User | null;
+  role: 'teacher' | 'admin' | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -116,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, role: user?.role ?? null, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
