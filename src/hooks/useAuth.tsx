@@ -22,13 +22,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 async function fetchUserRole(uid: string): Promise<'teacher' | 'admin'> {
   try {
     console.log('[Auth Debug] Fetching role for UID:', uid);
-    const roleDoc = await getDoc(doc(db, 'user_roles', uid));
+    const roleDocRef = doc(db, 'user_roles', uid);
+    const roleDoc = await getDoc(roleDocRef);
+    
+    console.log('[Auth Debug] Role doc path:', `user_roles/${uid}`);
     console.log('[Auth Debug] Role doc exists:', roleDoc.exists());
     
     if (roleDoc.exists()) {
       const data = roleDoc.data();
       console.log('[Auth Debug] Role document data:', data);
       const role = data?.role;
+      console.log('[Auth Debug] Raw role value:', role, 'type:', typeof role);
       if (role === 'admin' || role === 'teacher') {
         console.log('[Auth Debug] Returning role:', role);
         return role;
