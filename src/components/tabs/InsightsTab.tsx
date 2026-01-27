@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,14 +9,135 @@ import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { Search, RefreshCw, Upload } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { toast } from 'sonner';
 
 export function InsightsTab() {
-  const { students } = useStudents();
+  const { students, addStudent } = useStudents();
   const { benchmarks } = useBenchmarks();
   
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Parse CSV and create students with coded numbers
+  const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedClass) {
+      toast.error('Please select a class first');
+      return;
+    }
+
+    // Extract homeroom from selected class (e.g., "2F" from "2F - Grade 2 French")
+    const homeroom = selectedClass.split(' ')[0] || selectedClass;
+
+    setIsUploading(true);
+    
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      // Skip header row if present
+      const startIndex = lines[0]?.toLowerCase().includes('number') || 
+                        lines[0]?.toLowerCase().includes('initial') ? 1 : 0;
+      
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = startIndex; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Parse CSV line (handles quoted values)
+        const values = parseCSVLine(line);
+        
+        if (values.length < 2) {
+          console.warn(`Skipping line ${i + 1}: insufficient columns`);
+          errorCount++;
+          continue;
+        }
+
+        const [number, initials] = values;
+        
+        // Generate coded student number: homeroom-number (e.g., "2A-1")
+        const studentNumber = `${homeroom}-${number.trim()}`;
+        
+        try {
+          await addStudent({
+            studentNumber,
+            initials: initials.trim(),
+            firstName: '', // Not stored for privacy
+            lastName: '',  // Not stored for privacy
+            grade: selectedClass.match(/\d/)?.[0] || '', // Extract grade from class
+            homeroom,
+            yearGroup: '',
+            className: selectedClass,
+            sen: false,
+            pupilPremium: false,
+            eal: false,
+            isFocusStudent: false,
+            isHighNeed: false,
+          });
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to add student from line ${i + 1}:`, err);
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`Successfully imported ${successCount} student(s)`);
+      }
+      if (errorCount > 0) {
+        toast.warning(`${errorCount} row(s) could not be imported`);
+      }
+    } catch (err) {
+      console.error('CSV parsing error:', err);
+      toast.error('Failed to parse CSV file');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Helper to parse CSV line (handles quoted values with commas)
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    
+    return result;
+  };
+
+  // Filter students by selected class
+  const classStudents = selectedClass 
+    ? students.filter(s => s.className === selectedClass || s.homeroom === selectedClass.split(' ')[0])
+    : [];
+
+  // Filter by search query
+  const filteredStudents = classStudents.filter(s => 
+    s.studentNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.initials.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Calculate data count per student
   const dataCountByStudent = students.map(student => ({
@@ -24,7 +145,7 @@ export function InsightsTab() {
     count: benchmarks.filter(b => b.studentId === student.id).length
   }));
 
-  // Calculate risk vs stable (mock data for now)
+  // Calculate risk vs stable
   const performanceData = students.map(student => {
     const studentBenchmarks = benchmarks.filter(b => b.studentId === student.id);
     const atRisk = studentBenchmarks.some(b => parseFloat(b.score) < 50) ? 1 : 0;
@@ -44,11 +165,11 @@ export function InsightsTab() {
             <div>
               <CardTitle>School Roster (Class-based)</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Lives beside your legacy teacher roster. Use for shared classes, FI flip model, ISSP/ELL access, and CSV classlists.
+                Upload CSV with student numbers and initials. System generates coded IDs (e.g., 2A-1).
               </p>
             </div>
             <p className="text-xs text-muted-foreground font-mono">
-              Path: schools/folkstone_ps/classes/* + schools/folkstone_ps/students
+              CSV format: Number, Initials
             </p>
           </div>
         </CardHeader>
@@ -61,10 +182,14 @@ export function InsightsTab() {
                 <Label>Class</Label>
                 <Select value={selectedClass} onValueChange={setSelectedClass}>
                   <SelectTrigger>
-                    <SelectValue placeholder="No classes assigned" />
+                    <SelectValue placeholder="Select a class" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="2F">2F - Grade 2 French</SelectItem>
+                    <SelectItem value="2A - Grade 2A">2A - Grade 2A</SelectItem>
+                    <SelectItem value="2B - Grade 2B">2B - Grade 2B</SelectItem>
+                    <SelectItem value="2F - Grade 2 French">2F - Grade 2 French</SelectItem>
+                    <SelectItem value="3A - Grade 3A">3A - Grade 3A</SelectItem>
+                    <SelectItem value="3B - Grade 3B">3B - Grade 3B</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -72,25 +197,32 @@ export function InsightsTab() {
               <div className="border-2 border-dashed rounded-lg p-4 space-y-3">
                 <h4 className="font-medium">Upload Classlist CSV</h4>
                 <p className="text-xs text-muted-foreground">
-                  Columns supported: <code>student name (last, first)</code>, <code>number (optional)</code>, <code>grade</code>, <code>homeroom</code>.
+                  CSV format: <code>Number, Initials</code><br/>
+                  Example: <code>1, JD</code> → becomes <code>{selectedClass ? selectedClass.split(' ')[0] : 'homeroom'}-1</code>
                 </p>
-                <Input type="file" accept=".csv" className="text-sm" />
-                <Button className="w-full">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload to Selected Class
-                </Button>
+                <Input 
+                  ref={fileInputRef}
+                  type="file" 
+                  accept=".csv" 
+                  className="text-sm"
+                  onChange={handleCSVUpload}
+                  disabled={isUploading || !selectedClass}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {!selectedClass && '⚠️ Select a class before uploading'}
+                </p>
               </div>
             </div>
             
             {/* Students in selected class */}
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="font-semibold">Students in selected class</h3>
+                <h3 className="font-semibold">Students in {selectedClass || 'selected class'}</h3>
                 <div className="flex gap-2">
                   <div className="relative">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input 
-                      placeholder="Search name / number..." 
+                      placeholder="Search number / initials..." 
                       className="pl-8 w-48"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
@@ -107,24 +239,33 @@ export function InsightsTab() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Student #</TableHead>
-                    <TableHead>Name</TableHead>
+                    <TableHead>Initials</TableHead>
                     <TableHead>Grade</TableHead>
                     <TableHead>Homeroom</TableHead>
-                    <TableHead>Seat</TableHead>
-                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No students in roster yet.
-                    </TableCell>
-                  </TableRow>
+                  {filteredStudents.length > 0 ? (
+                    filteredStudents.map(student => (
+                      <TableRow key={student.id}>
+                        <TableCell className="font-mono">{student.studentNumber}</TableCell>
+                        <TableCell>{student.initials}</TableCell>
+                        <TableCell>{student.grade}</TableCell>
+                        <TableCell>{student.homeroom}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        {selectedClass ? 'No students in this class yet.' : 'Select a class to view students.'}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               
               <p className="text-xs text-muted-foreground">
-                Tip: Edit names safely — the internal <code>studentId</code> stays stable.
+                Student IDs are coded as homeroom-number (e.g., 2A-1) for privacy.
               </p>
             </div>
           </div>
@@ -205,7 +346,6 @@ export function InsightsTab() {
               <p className="text-muted-foreground">
                 Showing data for student: {students.find(s => s.id === selectedStudent)?.studentNumber}
               </p>
-              {/* Add trend chart here when data is available */}
             </div>
           ) : (
             <p className="text-center text-muted-foreground py-8">
