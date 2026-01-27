@@ -7,12 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
-import { Search, RefreshCw, Upload } from 'lucide-react';
+import { Search, RefreshCw, Upload, Trash2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { toast } from 'sonner';
 
 export function InsightsTab() {
-  const { students, addStudent } = useStudents();
+  const { students, addStudent, deleteStudent } = useStudents();
   const { benchmarks } = useBenchmarks();
   
   const [selectedClass, setSelectedClass] = useState<string>('');
@@ -242,6 +242,7 @@ export function InsightsTab() {
                     <TableHead>Initials</TableHead>
                     <TableHead>Grade</TableHead>
                     <TableHead>Homeroom</TableHead>
+                    <TableHead className="w-[60px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -252,11 +253,26 @@ export function InsightsTab() {
                         <TableCell>{student.initials}</TableCell>
                         <TableCell>{student.grade}</TableCell>
                         <TableCell>{student.homeroom}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`Delete student ${student.studentNumber}?`)) {
+                                deleteStudent(student.id)
+                                  .then(() => toast.success('Student deleted'))
+                                  .catch(() => toast.error('Failed to delete student'));
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                         {selectedClass ? 'No students in this class yet.' : 'Select a class to view students.'}
                       </TableCell>
                     </TableRow>
