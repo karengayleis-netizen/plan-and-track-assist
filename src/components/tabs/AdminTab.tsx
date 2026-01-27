@@ -134,7 +134,7 @@ export function AdminTab() {
                 Create / Save Class
               </Button>
               <p className="text-xs text-muted-foreground">
-                Note: If the CSV's homeroom differs by row, your existing upload logic already routes each student to that class field.
+                Students will be assigned coded IDs based on the class code (e.g., 2F-1, 2F-2).
               </p>
             </div>
 
@@ -156,7 +156,10 @@ export function AdminTab() {
             <div className="space-y-4">
               <h3 className="font-semibold">Upload Classlist (CSV)</h3>
               <p className="text-xs text-muted-foreground">
-                Supported columns: <code>student name (last, first)</code>, <code>number (optional)</code>, <code>grade</code>, <code>homeroom</code>.
+                CSV format: <code>Number, Initials</code> — Example: <code>1, JD</code> in class 2F → becomes <code>2F-1</code>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                The number will be prefixed with the selected class code to create the coded student ID.
               </p>
               <Input type="file" accept=".csv" className="text-sm" />
               <Button className="w-full">
