@@ -26,12 +26,12 @@ interface TabNavigationProps {
 }
 
 export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   
   // Filter tabs based on user role - Admin tab only visible to admins
   const visibleTabs = allTabs.filter(tab => {
     if (tab.requiresAdmin) {
-      return user?.role === 'admin';
+      return role === 'admin';
     }
     return true;
   });
