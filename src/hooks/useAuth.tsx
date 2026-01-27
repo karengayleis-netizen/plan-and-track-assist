@@ -21,17 +21,23 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Fetch user role from Firestore user_roles collection (separate from user profile for security)
 async function fetchUserRole(uid: string): Promise<'teacher' | 'admin'> {
   try {
+    console.log('[Auth Debug] Fetching role for UID:', uid);
     const roleDoc = await getDoc(doc(db, 'user_roles', uid));
+    console.log('[Auth Debug] Role doc exists:', roleDoc.exists());
+    
     if (roleDoc.exists()) {
-      const role = roleDoc.data()?.role;
+      const data = roleDoc.data();
+      console.log('[Auth Debug] Role document data:', data);
+      const role = data?.role;
       if (role === 'admin' || role === 'teacher') {
+        console.log('[Auth Debug] Returning role:', role);
         return role;
       }
     }
-    // Default to 'teacher' if no role document exists
+    console.log('[Auth Debug] No valid role found, defaulting to teacher');
     return 'teacher';
-  } catch {
-    // If Firestore query fails (e.g., no permissions), default to 'teacher'
+  } catch (error) {
+    console.error('[Auth Debug] Error fetching role:', error);
     return 'teacher';
   }
 }
@@ -39,12 +45,18 @@ async function fetchUserRole(uid: string): Promise<'teacher' | 'admin'> {
 // Fetch user's school ID from Firestore users collection
 async function fetchUserSchoolId(uid: string): Promise<string | undefined> {
   try {
+    console.log('[Auth Debug] Fetching schoolId for UID:', uid);
     const userDoc = await getDoc(doc(db, 'users', uid));
+    console.log('[Auth Debug] User doc exists:', userDoc.exists());
+    
     if (userDoc.exists()) {
-      return userDoc.data()?.schoolId;
+      const schoolId = userDoc.data()?.schoolId;
+      console.log('[Auth Debug] SchoolId found:', schoolId);
+      return schoolId;
     }
     return undefined;
-  } catch {
+  } catch (error) {
+    console.error('[Auth Debug] Error fetching schoolId:', error);
     return undefined;
   }
 }
@@ -70,6 +82,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             fetchUserRole(firebaseUser.uid),
             fetchUserSchoolId(firebaseUser.uid)
           ]);
+          
+          console.log('[Auth Debug] Final user state:', { uid: firebaseUser.uid, role, schoolId });
           
           setUser({
             uid: firebaseUser.uid,
