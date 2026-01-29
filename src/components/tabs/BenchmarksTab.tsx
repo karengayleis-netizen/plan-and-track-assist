@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { ASSESSMENT_TYPES } from '@/types';
-import { Download } from 'lucide-react';
+import { Download, Calendar, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function BenchmarksTab() {
@@ -64,26 +64,29 @@ export function BenchmarksTab() {
     <div className="space-y-6">
       {/* Record Data & Recent Benchmarks */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Record Data</CardTitle>
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              Record Data
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Select value={selectedStudent} onValueChange={setSelectedStudent}>
-              <SelectTrigger>
+              <SelectTrigger className="focus:ring-primary">
                 <SelectValue placeholder="-- Choose Student --" />
               </SelectTrigger>
               <SelectContent>
                 {students.map(student => (
                   <SelectItem key={student.id} value={student.id}>
-                    {student.studentNumber} - {student.firstName} {student.lastName}
+                    {student.studentNumber} - {student.initials || student.firstName}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
             <Select value={assessmentType} onValueChange={setAssessmentType}>
-              <SelectTrigger>
+              <SelectTrigger className="focus:ring-primary">
                 <SelectValue placeholder="Select Assessment..." />
               </SelectTrigger>
               <SelectContent>
@@ -97,12 +100,14 @@ export function BenchmarksTab() {
               placeholder="Score / Level"
               value={score}
               onChange={(e) => setScore(e.target.value)}
+              className="focus:ring-primary"
             />
 
             <Input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
+              className="focus:ring-primary"
             />
 
             <Textarea
@@ -110,35 +115,42 @@ export function BenchmarksTab() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
+              className="focus:ring-primary resize-none"
             />
 
             <Button className="w-full" onClick={handleSave}>
-              Save
+              Save Benchmark
             </Button>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Benchmarks</CardTitle>
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-primary" />
+              Recent Benchmarks
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
               <p className="text-muted-foreground">Loading...</p>
             ) : benchmarks.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No benchmarks recorded yet.</p>
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No benchmarks recorded yet.</p>
+                <p className="text-xs text-muted-foreground mt-1">Add your first benchmark using the form.</p>
+              </div>
             ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              <div className="space-y-2 max-h-[340px] overflow-y-auto pr-2">
                 {benchmarks.slice(0, 10).map(benchmark => (
-                  <div key={benchmark.id} className="p-3 border rounded-lg">
-                    <div className="flex justify-between">
-                      <span className="font-medium">{benchmark.assessmentType}</span>
-                      <span className="text-sm text-muted-foreground">
+                  <div key={benchmark.id} className="p-3 border border-border/50 rounded-lg hover:bg-muted/30 transition-colors">
+                    <div className="flex justify-between items-start">
+                      <span className="font-medium text-foreground">{benchmark.assessmentType}</span>
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
                         {benchmark.date?.toLocaleDateString?.() || 'No date'}
                       </span>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Score: {benchmark.score}
+                    <div className="text-sm text-muted-foreground mt-1">
+                      Score: <span className="font-medium text-primary">{benchmark.score}</span>
                     </div>
                   </div>
                 ))}
@@ -149,15 +161,17 @@ export function BenchmarksTab() {
       </div>
 
       {/* Bulk CSV Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide">Bulk CSV Actions</CardTitle>
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Bulk CSV Actions
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Import Format: <code>ID</code>, <code>Type</code>, <code>Score</code>, <code>Date</code>, <code>Notes</code>, <code>Ref</code>
+            Import Format: <code className="bg-muted px-1.5 py-0.5 rounded">ID</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Type</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Score</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Date</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Notes</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Ref</code>
           </p>
-          <Input type="file" accept=".csv" className="text-sm" />
+          <Input type="file" accept=".csv" className="text-sm focus:ring-primary" />
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={handleCSVUpload}>
               Upload CSV
