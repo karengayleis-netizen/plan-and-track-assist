@@ -26,7 +26,7 @@ interface TabNavigationProps {
 }
 
 export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
-  const { user, role } = useAuth();
+  const { role } = useAuth();
   
   // Filter tabs based on user role - Admin tab only visible to admins
   const visibleTabs = allTabs.filter(tab => {
@@ -37,7 +37,7 @@ export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
   });
 
   return (
-    <nav className="border-b border-border bg-card/30">
+    <nav className="border-b border-border bg-card/50">
       <div className="container mx-auto px-4">
         <div className="flex overflow-x-auto scrollbar-hide">
           {visibleTabs.map((tab) => {
@@ -52,7 +52,7 @@ export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
                   "flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-all border-b-2 -mb-px",
                   isActive
                     ? "border-primary text-primary bg-primary/5"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    : "border-transparent text-muted-foreground hover:text-primary hover:bg-primary/5"
                 )}
               >
                 <Icon className="h-4 w-4" />

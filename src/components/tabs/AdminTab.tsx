@@ -11,8 +11,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { GRADES } from '@/types';
-import { Upload, Search, Sparkles, Loader2 } from 'lucide-react';
+import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Activity, Settings } from 'lucide-react';
 import { toast } from 'sonner';
+import { StatCard } from '@/components/dashboard';
 
 interface AnalyzeSchoolDataResponse {
   recommendations: string;
@@ -103,32 +104,39 @@ export function AdminTab() {
   return (
     <div className="space-y-6">
       {/* Class Management */}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Class Management</CardTitle>
-            <p className="text-xs text-muted-foreground font-mono mt-1">
-              Paths: schools/folkstone_ps/classes/{'{classCode}'} • members/{'{uid}'} • roster/{'{studentId}'}
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Create classes, assign staff memberships, and upload classlists (CSV)
-            </p>
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Settings className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle>Class Management</CardTitle>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                Paths: schools/folkstone_ps/classes/{'{classCode}'} • members/{'{uid}'} • roster/{'{studentId}'}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Create classes, assign staff memberships, and upload classlists (CSV)
+              </p>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Create / Update Class */}
             <div className="space-y-4">
-              <h3 className="font-semibold">Create / Update Class</h3>
+              <h3 className="font-semibold text-foreground">Create / Update Class</h3>
               <Input
                 placeholder="Class Code (e.g., 2F)"
                 value={classCode}
                 onChange={(e) => setClassCode(e.target.value)}
+                className="focus:ring-primary"
               />
               <Input
                 placeholder="Class Name (optional)"
                 value={className}
                 onChange={(e) => setClassName(e.target.value)}
+                className="focus:ring-primary"
               />
               <Button className="w-full" onClick={handleCreateClass}>
                 Create / Save Class
@@ -140,28 +148,28 @@ export function AdminTab() {
 
             {/* Memberships */}
             <div className="space-y-4">
-              <h3 className="font-semibold">Memberships (Staff Access)</h3>
+              <h3 className="font-semibold text-foreground">Memberships (Staff Access)</h3>
               <p className="text-sm text-muted-foreground">No classes yet</p>
-              <div className="border rounded-lg p-3 space-y-2">
-                <span className="text-xs font-medium uppercase tracking-wide">Roster</span>
+              <div className="border border-border/50 rounded-lg p-3 space-y-2 bg-muted/20">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Roster</span>
                 <div className="text-sm text-muted-foreground">Select a class</div>
               </div>
-              <div className="border rounded-lg p-3 space-y-2">
-                <span className="text-xs font-medium uppercase tracking-wide">Members</span>
+              <div className="border border-border/50 rounded-lg p-3 space-y-2 bg-muted/20">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Members</span>
                 <div className="text-sm text-muted-foreground">Select a class</div>
               </div>
             </div>
 
             {/* Upload Classlist */}
             <div className="space-y-4">
-              <h3 className="font-semibold">Upload Classlist (CSV)</h3>
+              <h3 className="font-semibold text-foreground">Upload Classlist (CSV)</h3>
               <p className="text-xs text-muted-foreground">
-                CSV format: <code>Number, Initials</code> — Example: <code>1, JD</code> in class 2F → becomes <code>2F-1</code>
+                CSV format: <code className="bg-muted px-1 rounded">Number, Initials</code> — Example: <code className="bg-muted px-1 rounded">1, JD</code> in class 2F → becomes <code className="bg-muted px-1 rounded">2F-1</code>
               </p>
               <p className="text-xs text-muted-foreground">
                 The number will be prefixed with the selected class code to create the coded student ID.
               </p>
-              <Input type="file" accept=".csv" className="text-sm" />
+              <Input type="file" accept=".csv" className="text-sm focus:ring-primary" />
               <Button className="w-full">
                 <Upload className="h-4 w-4 mr-2" />
                 Upload CSV to selected class
@@ -173,23 +181,23 @@ export function AdminTab() {
 
       {/* Staff Directory */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-4">
             <CardTitle>Find staff (email search)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input 
                 placeholder="type email or name..." 
-                className="pl-8"
+                className="pl-8 focus:ring-primary"
                 value={staffSearch}
                 onChange={(e) => setStaffSearch(e.target.value)}
               />
             </div>
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-muted/30">
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>UID</TableHead>
@@ -207,8 +215,8 @@ export function AdminTab() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-4">
             <CardTitle>Add/Update Staff Directory (one-time setup)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -218,6 +226,7 @@ export function AdminTab() {
                 placeholder="Paste staff Firebase UID"
                 value={staffUid}
                 onChange={(e) => setStaffUid(e.target.value)}
+                className="focus:ring-primary"
               />
             </div>
             <div className="flex items-center space-x-2">
@@ -228,10 +237,10 @@ export function AdminTab() {
               />
               <Label htmlFor="canWrite">Can upload/edit roster (canWrite)</Label>
             </div>
-            <h4 className="font-medium mt-4">Current members</h4>
+            <h4 className="font-medium mt-4 text-foreground">Current members</h4>
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-muted/30">
                   <TableHead>UID</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>canWrite</TableHead>
@@ -251,43 +260,51 @@ export function AdminTab() {
       </div>
 
       {/* School Monitor */}
-      <Card>
-        <CardHeader>
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-4">
           <CardTitle>School Monitor (Peel/ON)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            <h3 className="font-semibold">All Grades</h3>
+            <h3 className="font-semibold text-foreground">All Grades</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold">{totalStudents}</div>
-                <div className="text-xs text-muted-foreground uppercase">Total Students</div>
-              </div>
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold">{totalBenchmarks}</div>
-                <div className="text-xs text-muted-foreground uppercase">Total Benchmarks</div>
-              </div>
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-red-600">{atRiskCount}</div>
-                <div className="text-xs text-muted-foreground uppercase">At Risk (Data/Flag)</div>
-              </div>
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold">{avgDataPerStudent}</div>
-                <div className="text-xs text-muted-foreground uppercase">Avg Data/Student</div>
-              </div>
+              <StatCard
+                title="Total Students"
+                value={totalStudents}
+                icon={Users}
+                variant="primary"
+              />
+              <StatCard
+                title="Total Benchmarks"
+                value={totalBenchmarks}
+                icon={BarChart3}
+                variant="default"
+              />
+              <StatCard
+                title="At Risk (Data/Flag)"
+                value={atRiskCount}
+                icon={AlertTriangle}
+                variant="destructive"
+              />
+              <StatCard
+                title="Avg Data/Student"
+                value={avgDataPerStudent}
+                icon={Activity}
+                variant="success"
+              />
             </div>
 
             {/* School Risk Profile placeholder */}
-            <div className="border rounded-lg p-4">
-              <h4 className="font-medium mb-2">School Risk Profile</h4>
-              <div className="h-20 bg-muted rounded flex items-center justify-center text-muted-foreground">
+            <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
+              <h4 className="font-medium mb-2 text-foreground">School Risk Profile</h4>
+              <div className="h-20 bg-muted/50 rounded flex items-center justify-center text-muted-foreground">
                 Chart visualization
               </div>
             </div>
 
             {/* Areas of Need */}
-            <div className="border rounded-lg p-4">
-              <h4 className="font-medium mb-2">Areas of Need</h4>
+            <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
+              <h4 className="font-medium mb-2 text-foreground">Areas of Need</h4>
               <div className="text-muted-foreground text-sm">
                 Analysis based on benchmark data will appear here.
               </div>
@@ -298,18 +315,18 @@ export function AdminTab() {
 
       {/* Grade & Teacher Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-4">
             <CardTitle>Grade Analytics & Performance</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-muted/30">
                   <TableHead>Grade</TableHead>
                   <TableHead>Students</TableHead>
-                  <TableHead>At Risk % (Below)</TableHead>
-                  <TableHead>Stable % (At/Above)</TableHead>
+                  <TableHead>At Risk %</TableHead>
+                  <TableHead>Stable %</TableHead>
                   <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -322,11 +339,15 @@ export function AdminTab() {
                   </TableRow>
                 ) : (
                   gradeAnalytics.map(grade => (
-                    <TableRow key={grade.grade}>
-                      <TableCell>Grade {grade.grade}</TableCell>
+                    <TableRow key={grade.grade} className="hover:bg-muted/30">
+                      <TableCell className="font-medium">Grade {grade.grade}</TableCell>
                       <TableCell>{grade.students}</TableCell>
-                      <TableCell className="text-red-600">{grade.atRiskPercent}%</TableCell>
-                      <TableCell className="text-green-600">{grade.stablePercent}%</TableCell>
+                      <TableCell>
+                        <span className="text-destructive font-medium">{grade.atRiskPercent}%</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-success font-medium">{grade.stablePercent}%</span>
+                      </TableCell>
                       <TableCell>
                         <Button variant="outline" size="sm">View</Button>
                       </TableCell>
@@ -338,14 +359,14 @@ export function AdminTab() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-4">
             <CardTitle>Teacher Analytics</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-muted/30">
                   <TableHead>Teacher</TableHead>
                   <TableHead>Class Size</TableHead>
                   <TableHead>Benchmarks</TableHead>
@@ -367,14 +388,14 @@ export function AdminTab() {
 
       {/* Tracked Students & AI Strategy */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-4">
             <CardTitle>Tracked Students (At-Risk)</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-muted/30">
                   <TableHead>Student</TableHead>
                   <TableHead>Teacher</TableHead>
                   <TableHead>Reason</TableHead>
@@ -390,10 +411,12 @@ export function AdminTab() {
                   </TableRow>
                 ) : (
                   students.filter(s => s.isHighNeed).map(student => (
-                    <TableRow key={student.id}>
-                      <TableCell>{student.studentNumber}</TableCell>
+                    <TableRow key={student.id} className="hover:bg-muted/30">
+                      <TableCell className="font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.homeroom || '-'}</TableCell>
-                      <TableCell>Manual flag</TableCell>
+                      <TableCell>
+                        <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded-full">Manual flag</span>
+                      </TableCell>
                       <TableCell>
                         <Button variant="outline" size="sm">View</Button>
                       </TableCell>
@@ -405,14 +428,17 @@ export function AdminTab() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>AI Strategy (Peel/ON)</CardTitle>
+        <Card className="border-border/50 shadow-sm border-l-4 border-l-primary">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              AI Strategy (Peel/ON)
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">
               <Select value={selectedProgram} onValueChange={setSelectedProgram}>
-                <SelectTrigger>
+                <SelectTrigger className="focus:ring-primary">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -429,10 +455,10 @@ export function AdminTab() {
                 {isAnalyzing ? 'Analyzing...' : 'Analyze'}
               </Button>
             </div>
-            <div className="border rounded-lg p-4">
-              <h4 className="font-medium mb-2">Resource & Leadership Recommendations</h4>
+            <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
+              <h4 className="font-medium mb-2 text-foreground">Resource & Leadership Recommendations</h4>
               {aiRecommendations ? (
-                <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm">
+                <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm text-foreground">
                   {aiRecommendations}
                 </div>
               ) : (

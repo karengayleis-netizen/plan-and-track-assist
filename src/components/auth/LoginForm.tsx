@@ -61,11 +61,11 @@ export function LoginForm() {
 
   if (showForgotPassword) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-        <Card className="w-full max-w-md shadow-2xl border-primary/10">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-primary/5 to-primary/10 p-4">
+        <Card className="w-full max-w-md shadow-xl border-border/50">
           <CardHeader className="text-center space-y-4">
-            <div className="mx-auto bg-primary/10 p-4 rounded-2xl w-fit">
-              <GraduationCap className="h-10 w-10 text-primary" />
+            <div className="mx-auto bg-primary p-4 rounded-2xl w-fit shadow-lg">
+              <GraduationCap className="h-10 w-10 text-primary-foreground" />
             </div>
             <div>
               <CardTitle className="text-2xl">Reset Password</CardTitle>
@@ -84,6 +84,7 @@ export function LoginForm() {
                   placeholder="teacher@school.edu"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  className="focus:ring-primary"
                   required
                 />
               </div>
@@ -125,14 +126,14 @@ export function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <Card className="w-full max-w-md shadow-2xl border-primary/10">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-primary/5 to-primary/10 p-4">
+      <Card className="w-full max-w-md shadow-xl border-border/50">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto bg-primary/10 p-4 rounded-2xl w-fit">
-            <GraduationCap className="h-10 w-10 text-primary" />
+          <div className="mx-auto bg-primary p-4 rounded-2xl w-fit shadow-lg">
+            <GraduationCap className="h-10 w-10 text-primary-foreground" />
           </div>
           <div>
-            <CardTitle className="text-2xl">School Intervention Tool</CardTitle>
+            <CardTitle className="text-2xl">Plan & Track Assist</CardTitle>
             <CardDescription className="mt-2">
               Sign in to access the data intervention platform
             </CardDescription>
@@ -148,6 +149,7 @@ export function LoginForm() {
                 placeholder="teacher@school.edu"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                className="focus:ring-primary"
                 required
               />
             </div>
@@ -172,6 +174,7 @@ export function LoginForm() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="focus:ring-primary"
                 required
               />
             </div>

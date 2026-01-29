@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip, LineChart, Line } from 'recharts';
-import { TrendingUp, Users, AlertTriangle, CheckCircle } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart } from 'recharts';
+import { Users, AlertTriangle, Target, CheckCircle } from 'lucide-react';
+import { StatCard, InsightChart, chartColors, tooltipStyle, SectionHeader } from '@/components/dashboard';
 
 export function InsightsTab() {
   const { students } = useStudents();
@@ -18,6 +18,10 @@ export function InsightsTab() {
   const studentsWithData = students.filter(s => 
     benchmarks.some(b => b.studentId === s.id)
   ).length;
+
+  // Calculate percentages
+  const atRiskPercent = totalStudents > 0 ? Math.round((atRiskCount / totalStudents) * 100) : 0;
+  const withDataPercent = totalStudents > 0 ? Math.round((studentsWithData / totalStudents) * 100) : 0;
 
   // Calculate data count per student
   const dataCountByStudent = students.map(student => ({
@@ -48,175 +52,184 @@ export function InsightsTab() {
         }))
     : [];
 
+  const selectedStudentInfo = students.find(s => s.id === selectedStudent);
+
   return (
     <div className="space-y-6">
-      {/* Summary Stats */}
+      {/* Welcome Header */}
+      <div className="bg-gradient-to-r from-primary/5 via-primary/10 to-transparent rounded-xl p-6 border border-primary/10">
+        <SectionHeader 
+          title="School Overview"
+          description={`Dashboard updated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`}
+        />
+      </div>
+
+      {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <Users className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-2xl font-bold">{totalStudents}</p>
-                <p className="text-sm text-muted-foreground">Total Students</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-8 w-8 text-destructive" />
-              <div>
-                <p className="text-2xl font-bold">{atRiskCount}</p>
-                <p className="text-sm text-muted-foreground">High Need</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-2xl font-bold">{focusCount}</p>
-                <p className="text-sm text-muted-foreground">Focus Students</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-2xl font-bold">{studentsWithData}</p>
-                <p className="text-sm text-muted-foreground">With Data</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Total Students"
+          value={totalStudents}
+          icon={Users}
+          variant="primary"
+        />
+        <StatCard
+          title="High Need"
+          value={atRiskCount}
+          subtitle={`${atRiskPercent}%`}
+          icon={AlertTriangle}
+          variant="destructive"
+        />
+        <StatCard
+          title="Focus Students"
+          value={focusCount}
+          icon={Target}
+          variant="purple"
+        />
+        <StatCard
+          title="With Data"
+          value={studentsWithData}
+          subtitle={`${withDataPercent}%`}
+          icon={CheckCircle}
+          variant="success"
+        />
       </div>
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Data Points per Student</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              {dataCountByStudent.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dataCountByStudent}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="count" fill="hsl(var(--primary))" name="Data Points" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  No benchmark data yet. Add benchmarks to see insights.
-                </div>
-              )}
+        <InsightChart title="Data Points per Student" description="Benchmark records by student">
+          {dataCountByStudent.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dataCountByStudent} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={{ stroke: 'hsl(var(--border))' }}
+                  tickLine={false}
+                />
+                <YAxis 
+                  tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip {...tooltipStyle} />
+                <Bar 
+                  dataKey="count" 
+                  fill={chartColors.primary}
+                  radius={[4, 4, 0, 0]}
+                  name="Data Points" 
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              No benchmark data yet. Add benchmarks to see insights.
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </InsightChart>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Class Performance Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              {students.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={performanceData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="atRisk" stackId="a" fill="hsl(var(--destructive))" name="At Risk" />
-                    <Bar dataKey="stable" stackId="a" fill="hsl(var(--primary))" name="Stable" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  No students yet. Add students to see performance data.
-                </div>
-              )}
+        <InsightChart title="Class Performance Distribution" description="At-risk vs stable students">
+          {students.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={performanceData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={{ stroke: 'hsl(var(--border))' }}
+                  tickLine={false}
+                />
+                <YAxis 
+                  tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip {...tooltipStyle} />
+                <Bar dataKey="atRisk" stackId="a" fill={chartColors.destructive} name="At Risk" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="stable" stackId="a" fill={chartColors.success} name="Stable" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              No students yet. Add students to see performance data.
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </InsightChart>
       </div>
 
       {/* Student Deep Dive */}
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle>Student Deep Dive</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Select a student to see their trend line and performance over time.
-              </p>
-            </div>
-            <Select value={selectedStudent} onValueChange={setSelectedStudent}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="-- Choose Student --" />
-              </SelectTrigger>
-              <SelectContent>
-                {students.map(student => (
-                  <SelectItem key={student.id} value={student.id}>
-                    {student.studentNumber} - {student.initials}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {selectedStudent ? (
-            <div className="space-y-4">
-              <div className="h-[300px]">
-                {selectedStudentData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={selectedStudentData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis domain={[0, 100]} />
-                      <Tooltip />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="score" 
-                        stroke="hsl(var(--primary))" 
-                        strokeWidth={2}
-                        dot={{ fill: 'hsl(var(--primary))' }}
-                        name="Score"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground">
-                    No benchmark data for this student yet.
-                  </div>
-                )}
-              </div>
-            </div>
+      <InsightChart 
+        title="Student Deep Dive" 
+        description="Select a student to see their trend line and performance over time."
+        action={
+          <Select value={selectedStudent} onValueChange={setSelectedStudent}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="-- Choose Student --" />
+            </SelectTrigger>
+            <SelectContent>
+              {students.map(student => (
+                <SelectItem key={student.id} value={student.id}>
+                  {student.studentNumber} - {student.initials}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      >
+        {selectedStudent ? (
+          selectedStudentData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={selectedStudentData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="scoreGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={chartColors.primary} stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor={chartColors.primary} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis 
+                  dataKey="date" 
+                  tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={{ stroke: 'hsl(var(--border))' }}
+                  tickLine={false}
+                />
+                <YAxis 
+                  domain={[0, 100]} 
+                  tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip {...tooltipStyle} />
+                <Area 
+                  type="monotone" 
+                  dataKey="score" 
+                  stroke={chartColors.primary}
+                  strokeWidth={2}
+                  fill="url(#scoreGradient)"
+                  name="Score"
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="score" 
+                  stroke={chartColors.primary}
+                  strokeWidth={2}
+                  dot={{ fill: chartColors.primary, strokeWidth: 0, r: 4 }}
+                  activeDot={{ r: 6, stroke: chartColors.primary, strokeWidth: 2, fill: 'white' }}
+                  name="Score"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           ) : (
-            <p className="text-center text-muted-foreground py-8">
-              Select a student to view their detailed analytics.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+              <p>No benchmark data for {selectedStudentInfo?.studentNumber || 'this student'} yet.</p>
+            </div>
+          )
+        ) : (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            Select a student to view their detailed analytics.
+          </div>
+        )}
+      </InsightChart>
     </div>
   );
 }

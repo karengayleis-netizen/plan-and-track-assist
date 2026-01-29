@@ -194,8 +194,8 @@ export function StudentsTab() {
   return (
     <div className="space-y-6">
       {/* Class Selection & CSV Upload */}
-      <Card>
-        <CardHeader>
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-4">
           <div className="flex justify-between items-start">
             <div>
               <CardTitle>School Roster</CardTitle>
@@ -203,7 +203,7 @@ export function StudentsTab() {
                 Upload CSV or manually add students. System generates coded IDs (e.g., 2A-1) for privacy.
               </p>
             </div>
-            <p className="text-xs text-muted-foreground font-mono">
+            <p className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
               CSV format: Number, Initials
             </p>
           </div>
@@ -215,7 +215,7 @@ export function StudentsTab() {
               <div className="space-y-2">
                 <Label>Select Class</Label>
                 <Select value={selectedClass} onValueChange={setSelectedClass}>
-                  <SelectTrigger>
+                  <SelectTrigger className="focus:ring-primary">
                     <SelectValue placeholder="Select a class" />
                   </SelectTrigger>
                   <SelectContent>
@@ -228,25 +228,25 @@ export function StudentsTab() {
                 </Select>
               </div>
               
-              <div className="border-2 border-dashed rounded-lg p-4 space-y-3">
-                <h4 className="font-medium flex items-center gap-2">
+              <div className="border-2 border-dashed border-primary/30 rounded-lg p-4 space-y-3 bg-primary/5">
+                <h4 className="font-medium flex items-center gap-2 text-primary">
                   <Upload className="h-4 w-4" />
                   Upload Classlist CSV
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  CSV format: <code>Number, Initials</code><br/>
-                  Example: <code>1, JD</code> → becomes <code>{selectedClass ? selectedClass.split(' ')[0] : 'homeroom'}-1</code>
+                  CSV format: <code className="bg-muted px-1 rounded">Number, Initials</code><br/>
+                  Example: <code className="bg-muted px-1 rounded">1, JD</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass ? selectedClass.split(' ')[0] : 'homeroom'}-1</code>
                 </p>
                 <Input 
                   ref={fileInputRef}
                   type="file" 
                   accept=".csv" 
-                  className="text-sm"
+                  className="text-sm focus:ring-primary"
                   onChange={handleCSVUpload}
                   disabled={isUploading || !selectedClass}
                 />
                 {!selectedClass && (
-                  <p className="text-xs text-amber-600">⚠️ Select a class before uploading</p>
+                  <p className="text-xs text-warning flex items-center gap-1">⚠️ Select a class before uploading</p>
                 )}
               </div>
             </div>
@@ -259,15 +259,17 @@ export function StudentsTab() {
                   placeholder="Student # (e.g. 1, 2, 3)"
                   value={studentNumber}
                   onChange={(e) => setStudentNumber(e.target.value)}
+                  className="focus:ring-primary"
                 />
                 <Input
                   placeholder="Initials (e.g. JD)"
                   value={initials}
                   onChange={(e) => setInitials(e.target.value)}
+                  className="focus:ring-primary"
                 />
               </div>
               <Select value={grade} onValueChange={setGrade}>
-                <SelectTrigger>
+                <SelectTrigger className="focus:ring-primary">
                   <SelectValue placeholder="Select Grade..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -278,24 +280,24 @@ export function StudentsTab() {
               </Select>
               
               <div className="flex gap-4">
-                <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1">
+                <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1 border border-primary/20">
                   <Checkbox 
                     id="focusStudent" 
                     checked={isFocusStudent}
                     onCheckedChange={(checked) => setIsFocusStudent(checked as boolean)}
                   />
-                  <Label htmlFor="focusStudent" className="text-primary text-sm">
+                  <Label htmlFor="focusStudent" className="text-primary text-sm font-medium">
                     Focus Student
                   </Label>
                 </div>
                 
-                <div className="flex items-center space-x-2 p-2 bg-destructive/10 rounded-lg flex-1">
+                <div className="flex items-center space-x-2 p-2 bg-destructive/10 rounded-lg flex-1 border border-destructive/20">
                   <Checkbox 
                     id="highNeed" 
                     checked={isHighNeed}
                     onCheckedChange={(checked) => setIsHighNeed(checked as boolean)}
                   />
-                  <Label htmlFor="highNeed" className="text-destructive text-sm">
+                  <Label htmlFor="highNeed" className="text-destructive text-sm font-medium">
                     High Need
                   </Label>
                 </div>
@@ -310,7 +312,7 @@ export function StudentsTab() {
       </Card>
 
       {/* Student Roster Table */}
-      <Card>
+      <Card className="border-border/50 shadow-sm">
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>
@@ -318,10 +320,10 @@ export function StudentsTab() {
             </CardTitle>
             <div className="flex gap-2">
               <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
                   placeholder="Search..." 
-                  className="pl-8 w-48"
+                  className="pl-8 w-48 focus:ring-primary"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -339,7 +341,7 @@ export function StudentsTab() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="bg-muted/30">
                   <TableHead>Student #</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Grade</TableHead>
@@ -351,30 +353,30 @@ export function StudentsTab() {
               <TableBody>
                 {filteredStudents.length > 0 ? (
                   filteredStudents.map(student => (
-                    <TableRow key={student.id}>
-                      <TableCell className="font-mono">{student.studentNumber}</TableCell>
+                    <TableRow key={student.id} className="hover:bg-muted/30">
+                      <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
                       <TableCell>{student.homeroom}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           {student.isFocusStudent && (
-                            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">Focus</span>
+                            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Focus</span>
                           )}
                           {student.isHighNeed && (
-                            <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded">High Need</span>
+                            <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded-full font-medium">High Need</span>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-primary">
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button 
                             variant="ghost" 
                             size="icon" 
-                            className="h-8 w-8 text-destructive"
+                            className="h-8 w-8 hover:text-destructive"
                             onClick={() => handleDeleteStudent(student.id, student.studentNumber)}
                           >
                             <Trash2 className="h-4 w-4" />
