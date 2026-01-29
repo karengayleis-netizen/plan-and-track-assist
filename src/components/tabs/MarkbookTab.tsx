@@ -2,22 +2,17 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useStudents } from '@/hooks/useStudents';
 import { useMarkbook } from '@/hooks/useMarkbook';
 import { SUBJECTS, STRANDS } from '@/types';
-import { Search, RefreshCw, Upload, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function MarkbookTab() {
   const { students } = useStudents();
-  const { entries, loading, addEntry, refetch } = useMarkbook();
-  
-  const [selectedClass, setSelectedClass] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const { entries, loading, addEntry } = useMarkbook();
   
   // Form state
   const [selectedStudent, setSelectedStudent] = useState('');
@@ -71,100 +66,6 @@ export function MarkbookTab() {
 
   return (
     <div className="space-y-6">
-      {/* School Roster Section */}
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle>School Roster (Class-based)</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Lives beside your legacy teacher roster. Use for shared classes, FI flip model, ISSP/ELL access, and CSV classlists.
-              </p>
-            </div>
-            <p className="text-xs text-muted-foreground font-mono">
-              Path: schools/folkstone_ps/classes/* + schools/folkstone_ps/students
-            </p>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* My Classes */}
-            <div className="space-y-4">
-              <h3 className="font-semibold">My Classes (assigned)</h3>
-              <div className="space-y-2">
-                <Label>Class</Label>
-                <Select value={selectedClass} onValueChange={setSelectedClass}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="No classes assigned" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2F">2F - Grade 2 French</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="border-2 border-dashed rounded-lg p-4 space-y-3">
-                <h4 className="font-medium">Upload Classlist CSV</h4>
-                <p className="text-xs text-muted-foreground">
-                  Columns supported: <code>student name (last, first)</code>, <code>number (optional)</code>, <code>grade</code>, <code>homeroom</code>.
-                </p>
-                <Input type="file" accept=".csv" className="text-sm" />
-                <Button className="w-full">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload to Selected Class
-                </Button>
-              </div>
-            </div>
-            
-            {/* Students in selected class */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="font-semibold">Students in selected class</h3>
-                <div className="flex gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder="Search name / number..." 
-                      className="pl-8 w-48"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
-                  <Button variant="outline" size="sm" onClick={refetch}>
-                    <RefreshCw className="h-4 w-4 mr-1" />
-                    Refresh
-                  </Button>
-                </div>
-              </div>
-              
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student #</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Grade</TableHead>
-                    <TableHead>Homeroom</TableHead>
-                    <TableHead>Seat</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No students in roster yet.
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-              
-              <p className="text-xs text-muted-foreground">
-                Tip: Edit names safely — the internal <code>studentId</code> stays stable.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* New Observation & Markbook Entries */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
