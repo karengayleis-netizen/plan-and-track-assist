@@ -7,13 +7,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useStudents } from '@/hooks/useStudents';
-import { GRADES } from '@/types';
-import { Search, RefreshCw, Upload, Edit, Trash2 } from 'lucide-react';
+import { useClasses } from '@/hooks/useClasses';
+import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 
 export function StudentsTab() {
   const { students, loading, addStudent, deleteStudent, refetch } = useStudents();
-  const [selectedClass, setSelectedClass] = useState<string>('');
+  const { classes, loading: classesLoading, getClassByCode } = useClasses();
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -21,9 +23,12 @@ export function StudentsTab() {
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
   const [initials, setInitials] = useState('');
-  const [grade, setGrade] = useState('');
+  const [selectedGrade, setSelectedGrade] = useState('');
   const [isFocusStudent, setIsFocusStudent] = useState(false);
   const [isHighNeed, setIsHighNeed] = useState(false);
+
+  // Get selected class details
+  const selectedClass = classes.find(c => c.id === selectedClassId);
 
   // Parse CSV line (handles quoted values with commas)
   const parseCSVLine = (line: string): string[] => {
@@ -48,18 +53,38 @@ export function StudentsTab() {
     return result;
   };
 
-  // Handle CSV upload
+  // Validate grade against homeroom's allowedGrades
+  const validateGradeForHomeroom = (gradeStr: string, homeroom: typeof selectedClass): { valid: boolean; gradeNum: number | null; error?: string } => {
+    if (!homeroom) {
+      return { valid: false, gradeNum: null, error: 'No homeroom selected' };
+    }
+
+    const gradeNum = parseGradeToNumber(gradeStr);
+    if (gradeNum === null) {
+      return { valid: false, gradeNum: null, error: `Invalid grade: "${gradeStr}"` };
+    }
+
+    if (!homeroom.allowedGrades.includes(gradeNum)) {
+      const allowed = homeroom.allowedGrades.map(g => formatGradeDisplay(g)).join(', ');
+      return { 
+        valid: false, 
+        gradeNum, 
+        error: `Grade ${formatGradeDisplay(gradeNum)} not allowed in ${homeroom.code}. Allowed: ${allowed}` 
+      };
+    }
+
+    return { valid: true, gradeNum };
+  };
+
+  // Handle CSV upload - format: StudentNumber, Initials, Grade
   const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     if (!selectedClass) {
-      toast.error('Please select a class first');
+      toast.error('Please select a homeroom first');
       return;
     }
-
-    // Extract homeroom from selected class (e.g., "2F" from "2F - Grade 2 French")
-    const homeroom = selectedClass.split(' ')[0] || selectedClass;
 
     setIsUploading(true);
     
@@ -68,11 +93,16 @@ export function StudentsTab() {
       const lines = text.split('\n').filter(line => line.trim());
       
       // Skip header row if present
-      const startIndex = lines[0]?.toLowerCase().includes('number') || 
-                        lines[0]?.toLowerCase().includes('initial') ? 1 : 0;
+      const headerLine = lines[0]?.toLowerCase() || '';
+      const hasHeader = headerLine.includes('student') || 
+                       headerLine.includes('number') || 
+                       headerLine.includes('initial') ||
+                       headerLine.includes('grade');
+      const startIndex = hasHeader ? 1 : 0;
       
       let successCount = 0;
       let errorCount = 0;
+      const errors: string[] = [];
 
       for (let i = startIndex; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -80,16 +110,25 @@ export function StudentsTab() {
 
         const values = parseCSVLine(line);
         
-        if (values.length < 2) {
-          console.warn(`Skipping line ${i + 1}: insufficient columns`);
+        // Expected format: StudentNumber, Initials, Grade
+        if (values.length < 3) {
+          errors.push(`Row ${i + 1}: Expected 3 columns (StudentNumber, Initials, Grade), got ${values.length}`);
           errorCount++;
           continue;
         }
 
-        const [number, studentInitials] = values;
+        const [number, studentInitials, gradeStr] = values;
         
-        // Generate coded student number: homeroom-number (e.g., "2A-1")
-        const codedStudentNumber = `${homeroom}-${number.trim()}`;
+        // Validate grade against homeroom
+        const gradeValidation = validateGradeForHomeroom(gradeStr, selectedClass);
+        if (!gradeValidation.valid) {
+          errors.push(`Row ${i + 1}: ${gradeValidation.error}`);
+          errorCount++;
+          continue;
+        }
+
+        // Generate coded student number: homeroom-number (e.g., "2AF-1")
+        const codedStudentNumber = `${selectedClass.code}-${number.trim()}`;
         
         try {
           await addStudent({
@@ -97,10 +136,10 @@ export function StudentsTab() {
             initials: studentInitials.trim(),
             firstName: '', // Not stored for privacy
             lastName: '',  // Not stored for privacy
-            grade: selectedClass.match(/\d/)?.[0] || '',
-            homeroom,
+            grade: String(gradeValidation.gradeNum),
+            homeroom: selectedClass.code,
             yearGroup: '',
-            className: selectedClass,
+            className: selectedClass.name || selectedClass.code,
             sen: false,
             pupilPremium: false,
             eal: false,
@@ -109,7 +148,8 @@ export function StudentsTab() {
           });
           successCount++;
         } catch (err) {
-          console.error(`Failed to add student from line ${i + 1}:`, err);
+          console.error(`Failed to add student from row ${i + 1}:`, err);
+          errors.push(`Row ${i + 1}: Failed to save student`);
           errorCount++;
         }
       }
@@ -119,6 +159,11 @@ export function StudentsTab() {
       }
       if (errorCount > 0) {
         toast.warning(`${errorCount} row(s) could not be imported`);
+        // Log first few errors for debugging
+        errors.slice(0, 5).forEach(err => console.warn(err));
+        if (errors.length > 5) {
+          console.warn(`... and ${errors.length - 5} more errors`);
+        }
       }
     } catch (err) {
       console.error('CSV parsing error:', err);
@@ -132,25 +177,38 @@ export function StudentsTab() {
   };
   
   const handleSaveStudent = async () => {
-    if (!studentNumber || !grade) {
-      toast.error('Please fill in required fields');
+    if (!selectedClass) {
+      toast.error('Please select a homeroom first');
+      return;
+    }
+    if (!studentNumber.trim()) {
+      toast.error('Please enter a student number');
+      return;
+    }
+    if (!selectedGrade) {
+      toast.error('Please select a grade');
       return;
     }
 
-    // Generate coded ID if a class is selected
-    const homeroom = selectedClass ? selectedClass.split(' ')[0] : '';
-    const codedStudentNumber = homeroom ? `${homeroom}-${studentNumber}` : studentNumber;
+    // Validate grade against homeroom
+    const gradeValidation = validateGradeForHomeroom(selectedGrade, selectedClass);
+    if (!gradeValidation.valid) {
+      toast.error(gradeValidation.error);
+      return;
+    }
+
+    const codedStudentNumber = `${selectedClass.code}-${studentNumber.trim()}`;
     
     try {
       await addStudent({
         studentNumber: codedStudentNumber,
-        initials,
+        initials: initials.trim(),
         firstName: '',
         lastName: '',
-        grade,
-        homeroom: homeroom || '',
-        yearGroup: grade,
-        className: selectedClass || '',
+        grade: selectedGrade,
+        homeroom: selectedClass.code,
+        yearGroup: selectedGrade,
+        className: selectedClass.name || selectedClass.code,
         sen: false,
         pupilPremium: false,
         eal: false,
@@ -161,7 +219,7 @@ export function StudentsTab() {
       // Reset form
       setStudentNumber('');
       setInitials('');
-      setGrade('');
+      setSelectedGrade('');
       setIsFocusStudent(false);
       setIsHighNeed(false);
     } catch (err) {
@@ -180,9 +238,9 @@ export function StudentsTab() {
     }
   };
 
-  // Filter students by selected class
+  // Filter students by selected homeroom
   const classStudents = selectedClass 
-    ? students.filter(s => s.className === selectedClass || s.homeroom === selectedClass.split(' ')[0])
+    ? students.filter(s => s.homeroom === selectedClass.code)
     : students;
 
   // Filter by search query
@@ -200,11 +258,11 @@ export function StudentsTab() {
             <div>
               <CardTitle>School Roster</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Upload CSV or manually add students. System generates coded IDs (e.g., 2A-1) for privacy.
+                Upload CSV or manually add students. System generates coded IDs (e.g., 2AF-1) for privacy.
               </p>
             </div>
             <p className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
-              CSV format: Number, Initials
+              CSV format: StudentNumber, Initials, Grade
             </p>
           </div>
         </CardHeader>
@@ -213,30 +271,64 @@ export function StudentsTab() {
             {/* Left: Class selection & CSV upload */}
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Select Class</Label>
-                <Select value={selectedClass} onValueChange={setSelectedClass}>
-                  <SelectTrigger className="focus:ring-primary">
-                    <SelectValue placeholder="Select a class" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2A - Grade 2A">2A - Grade 2A</SelectItem>
-                    <SelectItem value="2B - Grade 2B">2B - Grade 2B</SelectItem>
-                    <SelectItem value="2F - Grade 2 French">2F - Grade 2 French</SelectItem>
-                    <SelectItem value="3A - Grade 3A">3A - Grade 3A</SelectItem>
-                    <SelectItem value="3B - Grade 3B">3B - Grade 3B</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Select Homeroom *</Label>
+                {classesLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading homerooms...
+                  </div>
+                ) : classes.length === 0 ? (
+                  <div className="border border-dashed border-warning rounded-lg p-3 bg-warning/5">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-warning mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-warning">No homerooms available</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Ask an admin to create homerooms in the Admin tab first.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                    <SelectTrigger className="focus:ring-primary">
+                      <SelectValue placeholder="Select a homeroom" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {classes.map(cls => (
+                        <SelectItem key={cls.id} value={cls.id}>
+                          <span className="font-mono font-medium">{cls.code}</span>
+                          {cls.name && <span className="text-muted-foreground ml-2">— {cls.name}</span>}
+                          <span className="text-xs text-muted-foreground ml-2">
+                            (Grades: {cls.allowedGrades.map(g => formatGradeDisplay(g)).join(', ')})
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               
-              <div className="border-2 border-dashed border-primary/30 rounded-lg p-4 space-y-3 bg-primary/5">
-                <h4 className="font-medium flex items-center gap-2 text-primary">
+              <div className={`border-2 border-dashed rounded-lg p-4 space-y-3 ${
+                selectedClass ? 'border-primary/30 bg-primary/5' : 'border-muted bg-muted/20'
+              }`}>
+                <h4 className={`font-medium flex items-center gap-2 ${selectedClass ? 'text-primary' : 'text-muted-foreground'}`}>
                   <Upload className="h-4 w-4" />
                   Upload Classlist CSV
                 </h4>
-                <p className="text-xs text-muted-foreground">
-                  CSV format: <code className="bg-muted px-1 rounded">Number, Initials</code><br/>
-                  Example: <code className="bg-muted px-1 rounded">1, JD</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass ? selectedClass.split(' ')[0] : 'homeroom'}-1</code>
-                </p>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>
+                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade</code>
+                  </p>
+                  <p>
+                    Example: <code className="bg-muted px-1 rounded">1, JD, 4</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
+                  </p>
+                  {selectedClass && (
+                    <p className="text-primary">
+                      ✓ Allowed grades for {selectedClass.code}: {selectedClass.allowedGrades.map(g => formatGradeDisplay(g)).join(', ')}
+                    </p>
+                  )}
+                </div>
                 <Input 
                   ref={fileInputRef}
                   type="file" 
@@ -246,7 +338,16 @@ export function StudentsTab() {
                   disabled={isUploading || !selectedClass}
                 />
                 {!selectedClass && (
-                  <p className="text-xs text-warning flex items-center gap-1">⚠️ Select a class before uploading</p>
+                  <p className="text-xs text-warning flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Select a homeroom before uploading
+                  </p>
+                )}
+                {isUploading && (
+                  <div className="flex items-center gap-2 text-primary">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Importing students...
+                  </div>
                 )}
               </div>
             </div>
@@ -255,29 +356,51 @@ export function StudentsTab() {
             <div className="space-y-4">
               <h4 className="font-medium">Add Student Manually</h4>
               <div className="grid grid-cols-2 gap-3">
-                <Input
-                  placeholder="Student # (e.g. 1, 2, 3)"
-                  value={studentNumber}
-                  onChange={(e) => setStudentNumber(e.target.value)}
-                  className="focus:ring-primary"
-                />
-                <Input
-                  placeholder="Initials (e.g. JD)"
-                  value={initials}
-                  onChange={(e) => setInitials(e.target.value)}
-                  className="focus:ring-primary"
-                />
+                <div>
+                  <Label htmlFor="studentNumber">Student # *</Label>
+                  <Input
+                    id="studentNumber"
+                    placeholder="e.g. 1, 2, 3"
+                    value={studentNumber}
+                    onChange={(e) => setStudentNumber(e.target.value)}
+                    className="focus:ring-primary mt-1"
+                    disabled={!selectedClass}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="initials">Initials</Label>
+                  <Input
+                    id="initials"
+                    placeholder="e.g. JD"
+                    value={initials}
+                    onChange={(e) => setInitials(e.target.value)}
+                    className="focus:ring-primary mt-1"
+                    disabled={!selectedClass}
+                  />
+                </div>
               </div>
-              <Select value={grade} onValueChange={setGrade}>
-                <SelectTrigger className="focus:ring-primary">
-                  <SelectValue placeholder="Select Grade..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {GRADES.map(g => (
-                    <SelectItem key={g} value={g}>Grade {g}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              
+              <div>
+                <Label>Grade * (must match homeroom's allowed grades)</Label>
+                {selectedClass ? (
+                  <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                    <SelectTrigger className="focus:ring-primary mt-1">
+                      <SelectValue placeholder="Select grade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedClass.allowedGrades.map(g => (
+                        <SelectItem key={g} value={String(g)}>
+                          Grade {formatGradeDisplay(g)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Select a homeroom to see available grades
+                  </p>
+                )}
+              </div>
               
               <div className="flex gap-4">
                 <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1 border border-primary/20">
@@ -285,6 +408,7 @@ export function StudentsTab() {
                     id="focusStudent" 
                     checked={isFocusStudent}
                     onCheckedChange={(checked) => setIsFocusStudent(checked as boolean)}
+                    disabled={!selectedClass}
                   />
                   <Label htmlFor="focusStudent" className="text-primary text-sm font-medium">
                     Focus Student
@@ -296,6 +420,7 @@ export function StudentsTab() {
                     id="highNeed" 
                     checked={isHighNeed}
                     onCheckedChange={(checked) => setIsHighNeed(checked as boolean)}
+                    disabled={!selectedClass}
                   />
                   <Label htmlFor="highNeed" className="text-destructive text-sm font-medium">
                     High Need
@@ -303,7 +428,11 @@ export function StudentsTab() {
                 </div>
               </div>
               
-              <Button className="w-full" onClick={handleSaveStudent}>
+              <Button 
+                className="w-full" 
+                onClick={handleSaveStudent}
+                disabled={!selectedClass || !studentNumber.trim() || !selectedGrade}
+              >
                 Save Student
               </Button>
             </div>
@@ -316,7 +445,12 @@ export function StudentsTab() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>
-              {selectedClass ? `Students in ${selectedClass}` : 'All Students'}
+              {selectedClass ? `Students in ${selectedClass.code}` : 'All Students'}
+              {selectedClass && (
+                <span className="text-sm font-normal text-muted-foreground ml-2">
+                  ({filteredStudents.length} students)
+                </span>
+              )}
             </CardTitle>
             <div className="flex gap-2">
               <div className="relative">
@@ -337,7 +471,10 @@ export function StudentsTab() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-muted-foreground text-center py-8">Loading...</p>
+            <div className="text-center py-8 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+              Loading students...
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -357,7 +494,7 @@ export function StudentsTab() {
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
-                      <TableCell>{student.homeroom}</TableCell>
+                      <TableCell className="font-mono">{student.homeroom}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           {student.isFocusStudent && (
@@ -388,7 +525,7 @@ export function StudentsTab() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      {selectedClass ? 'No students in this class yet.' : 'No students added yet.'}
+                      {selectedClass ? 'No students in this homeroom yet.' : 'No students added yet.'}
                     </TableCell>
                   </TableRow>
                 )}
@@ -397,7 +534,7 @@ export function StudentsTab() {
           )}
           
           <p className="text-xs text-muted-foreground mt-4">
-            Student IDs are coded as homeroom-number (e.g., 2A-1) for privacy. First/last names are not stored.
+            Student IDs are coded as homeroom-number (e.g., 2AF-1) for privacy. First/last names are not stored.
           </p>
         </CardContent>
       </Card>
