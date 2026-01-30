@@ -90,7 +90,15 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Classes collection - requires authentication AND school membership
+    // Homerooms collection - primary class identifier, admin-created
+    match /homerooms/{homeroomId} {
+      allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
+      allow create: if isAdmin() && newResourceMatchesUserSchool();
+      allow update: if isAdmin() && belongsToSameSchool();
+      allow delete: if isAdmin();
+    }
+    
+    // Legacy classes collection - requires authentication AND school membership
     match /classes/{classId} {
       allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && newResourceMatchesUserSchool();

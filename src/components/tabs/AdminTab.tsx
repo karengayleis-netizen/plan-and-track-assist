@@ -10,10 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
+import { useClasses } from '@/hooks/useClasses';
 import { GRADES } from '@/types';
-import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Activity, Settings } from 'lucide-react';
+import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Activity, Settings, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatCard } from '@/components/dashboard';
+import { formatGradeDisplay } from '@/types/homeroom';
 
 interface AnalyzeSchoolDataResponse {
   recommendations: string;
@@ -22,13 +24,16 @@ interface AnalyzeSchoolDataResponse {
 export function AdminTab() {
   const { students } = useStudents();
   const { benchmarks } = useBenchmarks();
+  const { classes, addClass, deleteClass, loading: classesLoading } = useClasses();
   
   // Class Management state
   const [classCode, setClassCode] = useState('');
   const [className, setClassName] = useState('');
+  const [selectedGrades, setSelectedGrades] = useState<number[]>([]);
   const [staffSearch, setStaffSearch] = useState('');
   const [staffUid, setStaffUid] = useState('');
   const [canWrite, setCanWrite] = useState(false);
+  const [isCreatingClass, setIsCreatingClass] = useState(false);
   
   // AI Strategy state
   const [selectedProgram, setSelectedProgram] = useState('fi');
@@ -54,14 +59,55 @@ export function AdminTab() {
     };
   }).filter(g => g.students > 0);
 
-  const handleCreateClass = () => {
-    if (!classCode) {
-      toast.error('Please enter a class code');
+  // Available grades as numbers (K=0, 1-8)
+  const availableGrades = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+  const toggleGrade = (grade: number) => {
+    setSelectedGrades(prev => 
+      prev.includes(grade) 
+        ? prev.filter(g => g !== grade)
+        : [...prev, grade].sort((a, b) => a - b)
+    );
+  };
+
+  const handleCreateClass = async () => {
+    if (!classCode.trim()) {
+      toast.error('Please enter a class code (e.g., 2AF)');
       return;
     }
-    toast.success(`Class ${classCode} created`);
-    setClassCode('');
-    setClassName('');
+    if (selectedGrades.length === 0) {
+      toast.error('Please select at least one allowed grade');
+      return;
+    }
+
+    setIsCreatingClass(true);
+    try {
+      await addClass({
+        code: classCode.trim(),
+        name: className.trim() || undefined,
+        allowedGrades: selectedGrades,
+      });
+      toast.success(`Class "${classCode.toUpperCase()}" created successfully`);
+      // Reset form
+      setClassCode('');
+      setClassName('');
+      setSelectedGrades([]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create class');
+    } finally {
+      setIsCreatingClass(false);
+    }
+  };
+
+  const handleDeleteClass = async (id: string, code: string) => {
+    if (!confirm(`Delete class "${code}"? This cannot be undone.`)) return;
+    
+    try {
+      await deleteClass(id);
+      toast.success(`Class "${code}" deleted`);
+    } catch (err) {
+      toast.error('Failed to delete class');
+    }
   };
 
   const handleAnalyze = async () => {
@@ -113,67 +159,153 @@ export function AdminTab() {
             <div>
               <CardTitle>Class Management</CardTitle>
               <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                Paths: schools/folkstone_ps/classes/{'{classCode}'} • members/{'{uid}'} • roster/{'{studentId}'}
+                Paths: schools/{'{schoolId}'}/homerooms/{'{code}'}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Create classes, assign staff memberships, and upload classlists (CSV)
+                Create homerooms (classes), assign allowed grades for split-grade support
               </p>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Create / Update Class */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Create Class Form */}
             <div className="space-y-4">
-              <h3 className="font-semibold text-foreground">Create / Update Class</h3>
-              <Input
-                placeholder="Class Code (e.g., 2F)"
-                value={classCode}
-                onChange={(e) => setClassCode(e.target.value)}
-                className="focus:ring-primary"
-              />
-              <Input
-                placeholder="Class Name (optional)"
-                value={className}
-                onChange={(e) => setClassName(e.target.value)}
-                className="focus:ring-primary"
-              />
-              <Button className="w-full" onClick={handleCreateClass}>
-                Create / Save Class
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Students will be assigned coded IDs based on the class code (e.g., 2F-1, 2F-2).
-              </p>
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Create New Homeroom
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="classCode">Homeroom Code *</Label>
+                  <Input
+                    id="classCode"
+                    placeholder="e.g., 2AF, 45E, 3B"
+                    value={classCode}
+                    onChange={(e) => setClassCode(e.target.value.toUpperCase())}
+                    className="focus:ring-primary mt-1"
+                    maxLength={10}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Primary identifier for this class
+                  </p>
+                </div>
+                
+                <div>
+                  <Label htmlFor="className">Display Name (optional)</Label>
+                  <Input
+                    id="className"
+                    placeholder="e.g., Grade 2 French, Room 45"
+                    value={className}
+                    onChange={(e) => setClassName(e.target.value)}
+                    className="focus:ring-primary mt-1"
+                    maxLength={50}
+                  />
+                </div>
+
+                <div>
+                  <Label>Allowed Grades * (select one or more)</Label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {availableGrades.map(grade => (
+                      <button
+                        key={grade}
+                        type="button"
+                        onClick={() => toggleGrade(grade)}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ${
+                          selectedGrades.includes(grade)
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background border-border hover:bg-muted'
+                        }`}
+                      >
+                        {formatGradeDisplay(grade)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    For split grades (e.g., 4/5), select multiple grades
+                  </p>
+                </div>
+
+                <Button 
+                  className="w-full" 
+                  onClick={handleCreateClass}
+                  disabled={isCreatingClass || !classCode.trim() || selectedGrades.length === 0}
+                >
+                  {isCreatingClass ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create Homeroom
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
-            {/* Memberships */}
+            {/* Existing Classes List */}
             <div className="space-y-4">
-              <h3 className="font-semibold text-foreground">Memberships (Staff Access)</h3>
-              <p className="text-sm text-muted-foreground">No classes yet</p>
-              <div className="border border-border/50 rounded-lg p-3 space-y-2 bg-muted/20">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Roster</span>
-                <div className="text-sm text-muted-foreground">Select a class</div>
-              </div>
-              <div className="border border-border/50 rounded-lg p-3 space-y-2 bg-muted/20">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Members</span>
-                <div className="text-sm text-muted-foreground">Select a class</div>
-              </div>
-            </div>
-
-            {/* Upload Classlist */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-foreground">Upload Classlist (CSV)</h3>
-              <p className="text-xs text-muted-foreground">
-                CSV format: <code className="bg-muted px-1 rounded">Number, Initials</code> — Example: <code className="bg-muted px-1 rounded">1, JD</code> in class 2F → becomes <code className="bg-muted px-1 rounded">2F-1</code>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                The number will be prefixed with the selected class code to create the coded student ID.
-              </p>
-              <Input type="file" accept=".csv" className="text-sm focus:ring-primary" />
-              <Button className="w-full">
-                <Upload className="h-4 w-4 mr-2" />
-                Upload CSV to selected class
-              </Button>
+              <h3 className="font-semibold text-foreground">Existing Homerooms</h3>
+              {classesLoading ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+                  Loading classes...
+                </div>
+              ) : classes.length === 0 ? (
+                <div className="border border-dashed border-border rounded-lg p-6 text-center text-muted-foreground">
+                  <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No homerooms created yet</p>
+                  <p className="text-xs mt-1">Create your first homeroom to get started</p>
+                </div>
+              ) : (
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30">
+                        <TableHead>Code</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Grades</TableHead>
+                        <TableHead className="w-[60px]">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {classes.map(cls => (
+                        <TableRow key={cls.id} className="hover:bg-muted/30">
+                          <TableCell className="font-mono font-medium">{cls.code}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {cls.name || '—'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1 flex-wrap">
+                              {cls.allowedGrades.map(g => (
+                                <span 
+                                  key={g} 
+                                  className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded"
+                                >
+                                  {formatGradeDisplay(g)}
+                                </span>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 hover:text-destructive"
+                              onClick={() => handleDeleteClass(cls.id, cls.code)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -438,35 +570,42 @@ export function AdminTab() {
           <CardContent className="space-y-4">
             <div className="flex gap-2">
               <Select value={selectedProgram} onValueChange={setSelectedProgram}>
-                <SelectTrigger className="focus:ring-primary">
+                <SelectTrigger className="flex-1 focus:ring-primary">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="fi">French Immersion</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="english">English Program</SelectItem>
+                  <SelectItem value="all">All Programs</SelectItem>
                 </SelectContent>
               </Select>
               <Button onClick={handleAnalyze} disabled={isAnalyzing}>
                 {isAnalyzing ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Analyzing...
+                  </>
                 ) : (
-                  <Sparkles className="h-4 w-4 mr-2" />
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Analyze
+                  </>
                 )}
-                {isAnalyzing ? 'Analyzing...' : 'Analyze'}
               </Button>
             </div>
-            <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
-              <h4 className="font-medium mb-2 text-foreground">Resource & Leadership Recommendations</h4>
-              {aiRecommendations ? (
-                <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm text-foreground">
-                  {aiRecommendations}
-                </div>
-              ) : (
+            
+            {aiRecommendations ? (
+              <div className="border border-primary/20 rounded-lg p-4 bg-primary/5">
+                <h4 className="font-medium mb-2 text-primary">AI Recommendations</h4>
+                <div className="text-sm whitespace-pre-wrap">{aiRecommendations}</div>
+              </div>
+            ) : (
+              <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
                 <p className="text-muted-foreground text-sm">
-                  Run analysis to generate AI-powered recommendations.
+                  Click "Analyze" to generate AI-powered recommendations based on your school data.
                 </p>
-              )}
-            </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
