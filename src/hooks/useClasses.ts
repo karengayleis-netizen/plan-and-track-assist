@@ -21,10 +21,17 @@ export function useClasses() {
   const { user } = useAuth();
 
   const fetchClasses = useCallback(async () => {
-    if (!user?.schoolId) {
+    // Use schoolId from user profile, or fall back to a default for development
+    const schoolId = user?.schoolId || 'default-school';
+    
+    if (!user?.uid) {
       setClasses([]);
       setLoading(false);
       return;
+    }
+    
+    if (!user.schoolId) {
+      console.warn('[useClasses] User has no schoolId - using default-school for fetching');
     }
 
     try {
@@ -32,7 +39,7 @@ export function useClasses() {
       
       const classesQuery = query(
         collection(db, 'homerooms'),
-        where('schoolId', '==', user.schoolId)
+        where('schoolId', '==', schoolId)
       );
       
       const querySnapshot = await getDocs(classesQuery);
@@ -64,8 +71,15 @@ export function useClasses() {
   }, [user?.schoolId]);
 
   const addClass = async (input: Omit<CreateHomeroomInput, 'schoolId' | 'createdBy'>) => {
-    if (!user?.schoolId || !user?.uid) {
-      throw new Error('User must be authenticated with a school');
+    if (!user?.uid) {
+      throw new Error('User must be authenticated');
+    }
+
+    // Use schoolId from user profile, or fall back to a default for development
+    const schoolId = user.schoolId || 'default-school';
+    
+    if (!user.schoolId) {
+      console.warn('[useClasses] User has no schoolId set - using default-school. Set schoolId in Firestore users/{uid} document for production.');
     }
 
     // Validate input
@@ -89,7 +103,7 @@ export function useClasses() {
         code: input.code.trim().toUpperCase(),
         name: input.name?.trim() || '',
         allowedGrades: input.allowedGrades,
-        schoolId: user.schoolId,
+        schoolId: schoolId,
         createdBy: user.uid,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -99,6 +113,10 @@ export function useClasses() {
       return docRef.id;
     } catch (err) {
       console.error('Failed to add class:', err);
+      // Provide more helpful error message
+      if (err instanceof Error && err.message.includes('permission')) {
+        throw new Error('Permission denied. Make sure your user has admin role in Firestore user_roles collection.');
+      }
       throw new Error('Failed to create class');
     }
   };
