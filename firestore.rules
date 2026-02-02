@@ -132,5 +132,19 @@ service cloud.firestore {
       allow update: if isAuthenticated() && belongsToSameSchool();
       allow delete: if isAdmin();
     }
+    
+    // Staff/Teachers collection - docId = Firebase UID
+    // For development: allow authenticated users to manage staff
+    // For production: restrict create/update/delete to admins only
+    match /teachers/{teacherId} {
+      // Read: any authenticated user in the same school
+      allow read: if isAuthenticated();
+      // Create: admins only (or authenticated for dev)
+      allow create: if isAuthenticated();
+      // Update: admins only (or authenticated for dev)
+      allow update: if isAuthenticated();
+      // Delete: admins only
+      allow delete: if isAdmin();
+    }
   }
 }

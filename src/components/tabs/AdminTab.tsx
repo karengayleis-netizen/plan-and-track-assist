@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,11 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { useClasses } from '@/hooks/useClasses';
+import { useStaff } from '@/hooks/useStaff';
 import { GRADES } from '@/types';
-import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Activity, Settings, Plus, Trash2 } from 'lucide-react';
+import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Activity, Settings, Plus, Trash2, Save, UserPlus, Check, X, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatCard } from '@/components/dashboard';
 import { formatGradeDisplay } from '@/types/homeroom';
@@ -21,24 +23,57 @@ interface AnalyzeSchoolDataResponse {
   recommendations: string;
 }
 
+interface LookupUserByEmailResponse {
+  uid: string;
+  email: string;
+}
+
 export function AdminTab() {
   const { students } = useStudents();
   const { benchmarks } = useBenchmarks();
   const { classes, addClass, deleteClass, loading: classesLoading } = useClasses();
+  const { 
+    staffMembers, 
+    searchResults, 
+    loading: staffLoading, 
+    searchLoading,
+    fetchStaffMembers,
+    searchStaffByEmail,
+    saveStaffMember,
+    deleteStaffMember,
+    clearSearch,
+  } = useStaff();
   
   // Class Management state
   const [classCode, setClassCode] = useState('');
   const [className, setClassName] = useState('');
   const [selectedGrades, setSelectedGrades] = useState<number[]>([]);
+  
+  // Staff Directory state - Search
   const [staffSearch, setStaffSearch] = useState('');
+  
+  // Staff Directory state - Add/Update Form
   const [staffUid, setStaffUid] = useState('');
+  const [staffEmail, setStaffEmail] = useState('');
+  const [staffDisplayName, setStaffDisplayName] = useState('');
+  const [staffRole, setStaffRole] = useState<'teacher' | 'admin'>('teacher');
   const [canWrite, setCanWrite] = useState(false);
+  const [selectedHomerooms, setSelectedHomerooms] = useState<string[]>([]);
+  const [isSavingStaff, setIsSavingStaff] = useState(false);
+  const [isLookingUpEmail, setIsLookingUpEmail] = useState(false);
+  const [emailToLookup, setEmailToLookup] = useState('');
+  
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   
   // AI Strategy state
   const [selectedProgram, setSelectedProgram] = useState('fi');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiRecommendations, setAiRecommendations] = useState('');
+
+  // Load staff members on mount
+  useEffect(() => {
+    fetchStaffMembers();
+  }, [fetchStaffMembers]);
 
   // Calculate stats
   const totalStudents = students.length;
@@ -107,6 +142,90 @@ export function AdminTab() {
       toast.success(`Class "${code}" deleted`);
     } catch (err) {
       toast.error('Failed to delete class');
+    }
+  };
+
+  // Staff Directory handlers
+  const toggleHomeroom = (code: string) => {
+    setSelectedHomerooms(prev => 
+      prev.includes(code) 
+        ? prev.filter(c => c !== code)
+        : [...prev, code]
+    );
+  };
+
+  const handleSaveStaff = async () => {
+    if (!staffUid.trim()) {
+      toast.error('Please enter the staff UID');
+      return;
+    }
+    if (!staffEmail.trim()) {
+      toast.error('Please enter the staff email');
+      return;
+    }
+
+    setIsSavingStaff(true);
+    try {
+      await saveStaffMember({
+        uid: staffUid.trim(),
+        email: staffEmail.trim(),
+        role: staffRole,
+        canWrite: canWrite,
+        assignedHomerooms: selectedHomerooms,
+        displayName: staffDisplayName.trim() || undefined,
+      });
+      toast.success('Staff member saved successfully');
+      // Reset form
+      setStaffUid('');
+      setStaffEmail('');
+      setStaffDisplayName('');
+      setStaffRole('teacher');
+      setCanWrite(false);
+      setSelectedHomerooms([]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save staff member');
+    } finally {
+      setIsSavingStaff(false);
+    }
+  };
+
+  const handleDeleteStaff = async (uid: string, email: string) => {
+    if (!confirm(`Remove "${email}" from staff directory? This cannot be undone.`)) return;
+    
+    try {
+      await deleteStaffMember(uid);
+      toast.success(`Staff "${email}" removed`);
+    } catch (err) {
+      toast.error('Failed to remove staff member');
+    }
+  };
+
+  // Phase 2: Email lookup via Cloud Function
+  const handleLookupEmail = async () => {
+    if (!emailToLookup.trim()) {
+      toast.error('Please enter an email to lookup');
+      return;
+    }
+
+    setIsLookingUpEmail(true);
+    try {
+      const lookupUserByEmail = httpsCallable<{ email: string }, LookupUserByEmailResponse>(
+        functions,
+        'lookupUserByEmail'
+      );
+      
+      const result = await lookupUserByEmail({ email: emailToLookup.trim() });
+      
+      // Auto-fill the form
+      setStaffUid(result.data.uid);
+      setStaffEmail(result.data.email);
+      toast.success(`Found user: ${result.data.email}`);
+    } catch (err: unknown) {
+      console.error('Email lookup failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'User not found or lookup failed';
+      toast.error(errorMessage);
+    } finally {
+      setIsLookingUpEmail(false);
     }
   };
 
@@ -313,54 +432,216 @@ export function AdminTab() {
 
       {/* Staff Directory */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Find Staff Card */}
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="pb-4">
-            <CardTitle>Find staff (email search)</CardTitle>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Search className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle>Find Staff (Email Search)</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Search existing staff directory by email
+                </p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="type email or name..." 
-                className="pl-8 focus:ring-primary"
-                value={staffSearch}
-                onChange={(e) => setStaffSearch(e.target.value)}
-              />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Enter exact email address..." 
+                  className="pl-8 focus:ring-primary"
+                  value={staffSearch}
+                  onChange={(e) => setStaffSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      searchStaffByEmail(staffSearch);
+                    }
+                  }}
+                />
+              </div>
+              <Button 
+                onClick={() => searchStaffByEmail(staffSearch)}
+                disabled={searchLoading || !staffSearch.trim()}
+                variant="secondary"
+              >
+                {searchLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+              </Button>
+              {searchResults.length > 0 && (
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={() => {
+                    clearSearch();
+                    setStaffSearch('');
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>UID</TableHead>
-                  <TableHead>Use</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Search to find staff.
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+            
+            <div className="border border-border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30">
+                    <TableHead>Email</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>UID</TableHead>
+                    <TableHead className="w-[60px]">Use</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {searchLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-8">
+                        <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+                        <span className="text-muted-foreground">Searching...</span>
+                      </TableCell>
+                    </TableRow>
+                  ) : searchResults.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                        {staffSearch.trim() ? 'No staff found with that email.' : 'Enter an email to search.'}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    searchResults.map(staff => (
+                      <TableRow key={staff.uid} className="hover:bg-muted/30">
+                        <TableCell className="text-sm">{staff.email}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {staff.displayName || '—'}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {staff.uid.slice(0, 12)}...
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setStaffUid(staff.uid);
+                              setStaffEmail(staff.email);
+                              setStaffDisplayName(staff.displayName || '');
+                              setStaffRole(staff.role);
+                              setCanWrite(staff.canWrite);
+                              setSelectedHomerooms(staff.assignedHomerooms || []);
+                              toast.info('Staff loaded into form');
+                            }}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
+        {/* Add/Update Staff Card */}
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="pb-4">
-            <CardTitle>Add/Update Staff Directory (one-time setup)</CardTitle>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <UserPlus className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle>Add/Update Staff Directory</CardTitle>
+                <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                  Collection: teachers/{'{uid}'}
+                </p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Staff UID</Label>
-              <Input 
-                placeholder="Paste staff Firebase UID"
-                value={staffUid}
-                onChange={(e) => setStaffUid(e.target.value)}
-                className="focus:ring-primary"
-              />
+            {/* Phase 2: Email lookup to get UID */}
+            <div className="p-3 bg-muted/30 rounded-lg border border-border/50 space-y-2">
+              <Label className="text-xs text-muted-foreground">Phase 2: Lookup UID by Email (Cloud Function)</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="staff@school.edu"
+                  value={emailToLookup}
+                  onChange={(e) => setEmailToLookup(e.target.value)}
+                  className="flex-1"
+                />
+                <Button 
+                  variant="secondary"
+                  onClick={handleLookupEmail}
+                  disabled={isLookingUpEmail || !emailToLookup.trim()}
+                >
+                  {isLookingUpEmail ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Mail className="h-4 w-4 mr-1" />
+                      Lookup
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Uses Admin SDK to find Firebase Auth user by email
+              </p>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="staffUid">Staff UID *</Label>
+                <Input 
+                  id="staffUid"
+                  placeholder="Firebase UID"
+                  value={staffUid}
+                  onChange={(e) => setStaffUid(e.target.value)}
+                  className="focus:ring-primary font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="staffEmail">Email *</Label>
+                <Input 
+                  id="staffEmail"
+                  placeholder="staff@school.edu"
+                  value={staffEmail}
+                  onChange={(e) => setStaffEmail(e.target.value)}
+                  className="focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="staffName">Display Name</Label>
+                <Input 
+                  id="staffName"
+                  placeholder="John Smith"
+                  value={staffDisplayName}
+                  onChange={(e) => setStaffDisplayName(e.target.value)}
+                  className="focus:ring-primary"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={staffRole} onValueChange={(v) => setStaffRole(v as 'teacher' | 'admin')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="teacher">Teacher</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="flex items-center space-x-2">
               <Checkbox 
                 id="canWrite" 
@@ -369,24 +650,108 @@ export function AdminTab() {
               />
               <Label htmlFor="canWrite">Can upload/edit roster (canWrite)</Label>
             </div>
-            <h4 className="font-medium mt-4 text-foreground">Current members</h4>
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead>UID</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>canWrite</TableHead>
-                  <TableHead>Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Select a class..
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+
+            <div className="space-y-2">
+              <Label>Assigned Homerooms</Label>
+              <div className="flex flex-wrap gap-2">
+                {classes.length === 0 ? (
+                  <span className="text-sm text-muted-foreground">No homerooms available</span>
+                ) : (
+                  classes.map(cls => (
+                    <button
+                      key={cls.id}
+                      type="button"
+                      onClick={() => toggleHomeroom(cls.code)}
+                      className={`px-2 py-1 text-xs font-medium rounded border transition-colors ${
+                        selectedHomerooms.includes(cls.code)
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background border-border hover:bg-muted'
+                      }`}
+                    >
+                      {cls.code}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <Button 
+              className="w-full" 
+              onClick={handleSaveStaff}
+              disabled={isSavingStaff || !staffUid.trim() || !staffEmail.trim()}
+            >
+              {isSavingStaff ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Staff Member
+                </>
+              )}
+            </Button>
+
+            {/* Current Staff Members */}
+            <div className="pt-4 border-t border-border">
+              <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Current Staff ({staffMembers.length})
+              </h4>
+              {staffLoading ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+                  Loading...
+                </div>
+              ) : staffMembers.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  No staff members added yet.
+                </div>
+              ) : (
+                <div className="border border-border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30">
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Write</TableHead>
+                        <TableHead className="w-[60px]">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {staffMembers.map(staff => (
+                        <TableRow key={staff.uid} className="hover:bg-muted/30">
+                          <TableCell className="text-sm">{staff.email}</TableCell>
+                          <TableCell>
+                            <Badge variant={staff.role === 'admin' ? 'default' : 'secondary'} className="text-xs">
+                              {staff.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {staff.canWrite ? (
+                              <Check className="h-4 w-4 text-success" />
+                            ) : (
+                              <X className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 hover:text-destructive"
+                              onClick={() => handleDeleteStaff(staff.uid, staff.email)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
