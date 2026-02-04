@@ -26,6 +26,7 @@ interface AnalyzeSchoolDataResponse {
 interface LookupUserByEmailResponse {
   uid: string;
   email: string;
+  displayName?: string | null;
 }
 
 export function AdminTab() {
@@ -216,10 +217,13 @@ export function AdminTab() {
       
       const result = await lookupUserByEmail({ email: emailToLookup.trim() });
       
-      // Auto-fill the form
+      // Auto-fill the form with UID, email, and displayName
       setStaffUid(result.data.uid);
       setStaffEmail(result.data.email);
-      toast.success(`Found user: ${result.data.email}`);
+      if (result.data.displayName) {
+        setStaffDisplayName(result.data.displayName);
+      }
+      toast.success(`Found user: ${result.data.email}${result.data.displayName ? ` (${result.data.displayName})` : ''}`);
     } catch (err: unknown) {
       console.error('Email lookup failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'User not found or lookup failed';
