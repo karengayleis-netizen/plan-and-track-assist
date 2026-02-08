@@ -1,7 +1,7 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getFunctions } from 'firebase/functions';
+import { initializeApp, getApp, getApps } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 
 // Firebase configuration using environment variables
 // These are publishable client-side keys, safe for Vite's VITE_ prefix
@@ -12,10 +12,15 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "school-data-intervention-tool.firebasestorage.app",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "923408519266",
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:923408519266:web:88289c592655602596413b",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-WVHPNM1NEM"
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-WVHPNM1NEM",
 };
 
-const app = initializeApp(firebaseConfig);
+// Avoid double-initializing (can happen in hot reload)
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
+// ✅ DEBUG (temporary): confirms which Firebase project the app is ACTUALLY using
+console.log("[Firebase Debug] projectId:", app.options.projectId);
+console.log("[Firebase Debug] authDomain:", app.options.authDomain);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
