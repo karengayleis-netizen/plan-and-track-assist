@@ -194,9 +194,10 @@ export function useStaff() {
 
       if (existingDoc.exists()) {
         // Update existing
-        await updateDoc(docRef, {
+      await updateDoc(docRef, {
           email: input.email.trim(),
           emailLower: input.email.trim().toLowerCase(),
+          schoolId: schoolId,
           role: input.role || 'teacher',
           canWrite: input.canWrite ?? false,
           assignedHomerooms: input.assignedHomerooms || [],
