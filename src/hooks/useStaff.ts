@@ -21,13 +21,13 @@ export function useStaff() {
   const [loading, setLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   /**
    * Fetch all staff members for the current school
    */
   const fetchStaffMembers = useCallback(async () => {
-    if (!user?.uid || !user?.schoolId) {
+    if (!user?.uid || !user?.schoolId || role !== 'admin') {
       setStaffMembers([]);
       return;
     }
@@ -69,13 +69,13 @@ export function useStaff() {
     } finally {
       setLoading(false);
     }
-  }, [user?.uid, user?.schoolId]);
+  }, [user?.uid, user?.schoolId, role]);
 
   /**
    * Search for staff by email (case-insensitive)
    */
   const searchStaffByEmail = useCallback(async (email: string) => {
-    if (!user?.uid || !user?.schoolId) {
+    if (!user?.uid || !user?.schoolId || role !== 'admin') {
       setSearchResults([]);
       return;
     }
@@ -124,7 +124,7 @@ export function useStaff() {
     } finally {
       setSearchLoading(false);
     }
-  }, [user?.uid, user?.schoolId]);
+  }, [user?.uid, user?.schoolId, role]);
 
   /**
    * Get a single staff member by UID
