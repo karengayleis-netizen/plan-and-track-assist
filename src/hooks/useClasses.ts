@@ -21,12 +21,21 @@ export function useClasses() {
   const { user, role } = useAuth();
 
   const fetchClasses = useCallback(async () => {
+    console.log('[useClasses] fetchClasses called with:', {
+      uid: user?.uid,
+      schoolId: user?.schoolId,
+      role,
+      userRole: user?.role,
+    });
+    
     if (!user?.uid || !user?.schoolId || role !== 'admin') {
+      console.log('[useClasses] Guard blocked fetch — missing uid, schoolId, or not admin');
       setClasses([]);
       setLoading(false);
       return;
     }
     const schoolId = user.schoolId;
+    console.log('[useClasses] Proceeding to query homerooms with schoolId:', schoolId);
 
     try {
       setLoading(true);
