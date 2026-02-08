@@ -91,17 +91,19 @@ service cloud.firestore {
     }
     
     // Homerooms collection - primary class identifier
-    // For development: allow authenticated users to manage homerooms
-    // For production: restrict to admins only by uncommenting the admin checks
     match /homerooms/{homeroomId} {
-      // Read: any authenticated user in the same school
-      allow read: if isAuthenticated();
-      // Create: any authenticated user (for dev) - change to isAdmin() for production
-      allow create: if isAuthenticated();
-      // Update: any authenticated user (for dev) - change to isAdmin() for production  
-      allow update: if isAuthenticated();
-      // Delete: any authenticated user (for dev) - change to isAdmin() for production
-      allow delete: if isAuthenticated();
+      // Single-doc read: admin with school, allow legacy docs missing schoolId
+      allow get: if isAdmin() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (resource.data.schoolId == getUserSchool() || !('schoolId' in resource.data));
+      // List/query read: admin with school (frontend filters by schoolId)
+      allow list: if isAdmin() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow create: if isAdmin() && newResourceMatchesUserSchool();
+      allow update: if isAdmin() && 
+        (resource.data.schoolId == getUserSchool() || 
+         (!('schoolId' in resource.data) && request.resource.data.schoolId == getUserSchool()));
+      allow delete: if isAdmin() && resource.data.schoolId == getUserSchool();
     }
     
     // Legacy classes collection - requires authentication AND school membership
@@ -134,17 +136,19 @@ service cloud.firestore {
     }
     
     // Staff/Teachers collection - docId = Firebase UID
-    // For development: allow authenticated users to manage staff
-    // For production: restrict create/update/delete to admins only
     match /teachers/{teacherId} {
-      // Read: any authenticated user in the same school
-      allow read: if isAuthenticated();
-      // Create: admins only (or authenticated for dev)
-      allow create: if isAuthenticated();
-      // Update: admins only (or authenticated for dev)
-      allow update: if isAuthenticated();
-      // Delete: admins only
-      allow delete: if isAdmin();
+      // Single-doc read: admin with school, allow legacy docs missing schoolId
+      allow get: if isAdmin() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (resource.data.schoolId == getUserSchool() || !('schoolId' in resource.data));
+      // List/query read: admin with school (frontend filters by schoolId)
+      allow list: if isAdmin() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow create: if isAdmin() && newResourceMatchesUserSchool();
+      allow update: if isAdmin() && 
+        (resource.data.schoolId == getUserSchool() || 
+         (!('schoolId' in resource.data) && request.resource.data.schoolId == getUserSchool()));
+      allow delete: if isAdmin() && resource.data.schoolId == getUserSchool();
     }
   }
 }
