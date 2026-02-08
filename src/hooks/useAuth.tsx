@@ -108,6 +108,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (user?.uid) {
+      console.log("AUTH UID FROM APP:", user.uid);
+    }
+  }, [user?.uid]);
+
   const signIn = async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
   };
