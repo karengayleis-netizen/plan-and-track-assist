@@ -21,18 +21,12 @@ export function useClasses() {
   const { user } = useAuth();
 
   const fetchClasses = useCallback(async () => {
-    // Use schoolId from user profile, or fall back to a default for development
-    const schoolId = user?.schoolId || 'default-school';
-    
-    if (!user?.uid) {
+    if (!user?.uid || !user?.schoolId) {
       setClasses([]);
       setLoading(false);
       return;
     }
-    
-    if (!user.schoolId) {
-      console.warn('[useClasses] User has no schoolId - using default-school for fetching');
-    }
+    const schoolId = user.schoolId;
 
     try {
       setLoading(true);
@@ -68,19 +62,17 @@ export function useClasses() {
     } finally {
       setLoading(false);
     }
-  }, [user?.schoolId]);
+  }, [user?.uid, user?.schoolId]);
 
   const addClass = async (input: Omit<CreateHomeroomInput, 'schoolId' | 'createdBy'>) => {
     if (!user?.uid) {
       throw new Error('User must be authenticated');
     }
 
-    // Use schoolId from user profile, or fall back to a default for development
-    const schoolId = user.schoolId || 'default-school';
-    
     if (!user.schoolId) {
-      console.warn('[useClasses] User has no schoolId set - using default-school. Set schoolId in Firestore users/{uid} document for production.');
+      throw new Error('User has no school assigned. Contact your administrator.');
     }
+    const schoolId = user.schoolId;
 
     // Validate input
     if (!input.code || input.code.trim().length === 0) {

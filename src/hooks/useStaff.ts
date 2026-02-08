@@ -27,12 +27,11 @@ export function useStaff() {
    * Fetch all staff members for the current school
    */
   const fetchStaffMembers = useCallback(async () => {
-    const schoolId = user?.schoolId || 'default-school';
-    
-    if (!user?.uid) {
+    if (!user?.uid || !user?.schoolId) {
       setStaffMembers([]);
       return;
     }
+    const schoolId = user.schoolId;
 
     try {
       setLoading(true);
@@ -76,9 +75,7 @@ export function useStaff() {
    * Search for staff by email (case-insensitive)
    */
   const searchStaffByEmail = useCallback(async (email: string) => {
-    const schoolId = user?.schoolId || 'default-school';
-    
-    if (!user?.uid) {
+    if (!user?.uid || !user?.schoolId) {
       setSearchResults([]);
       return;
     }
@@ -93,6 +90,7 @@ export function useStaff() {
       setError(null);
       
       const searchLower = email.trim().toLowerCase();
+      const schoolId = user.schoolId;
       
       // Query Firestore for exact email match (case-insensitive via emailLower)
       const staffQuery = query(
@@ -169,7 +167,10 @@ export function useStaff() {
       throw new Error('User must be authenticated');
     }
 
-    const schoolId = user.schoolId || 'default-school';
+    if (!user.schoolId) {
+      throw new Error('User has no school assigned. Contact your administrator.');
+    }
+    const schoolId = user.schoolId;
 
     // Validate input
     if (!input.uid || input.uid.trim().length === 0) {
