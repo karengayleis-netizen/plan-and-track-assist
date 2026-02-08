@@ -18,10 +18,10 @@ export function useClasses() {
   const [classes, setClasses] = useState<Homeroom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   const fetchClasses = useCallback(async () => {
-    if (!user?.uid || !user?.schoolId) {
+    if (!user?.uid || !user?.schoolId || role !== 'admin') {
       setClasses([]);
       setLoading(false);
       return;
@@ -62,7 +62,7 @@ export function useClasses() {
     } finally {
       setLoading(false);
     }
-  }, [user?.uid, user?.schoolId]);
+  }, [user?.uid, user?.schoolId, role]);
 
   const addClass = async (input: Omit<CreateHomeroomInput, 'schoolId' | 'createdBy'>) => {
     if (!user?.uid) {
@@ -150,10 +150,10 @@ export function useClasses() {
   }, [user?.role, classes]);
 
   useEffect(() => {
-    if (user?.schoolId) {
+    if (user?.schoolId && role === 'admin') {
       fetchClasses();
     }
-  }, [user?.schoolId, fetchClasses]);
+  }, [user?.schoolId, role, fetchClasses]);
 
   return {
     classes,
