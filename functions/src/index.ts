@@ -66,3 +66,28 @@ export const lookupUserByEmail = functions.https.onCall(
     }
   }
 );
+
+export const syncClaimsFromUserRoles = functions.firestore
+  .document("user_roles/{uid}")
+  .onWrite(async (change, context) => {
+    const uid = context.params.uid;
+    const after = change.after;
+
+    if (!after.exists) {
+      functions.logger.info("Role doc deleted. Clearing claims for uid:", uid);
+      await admin.auth().setCustomUserClaims(uid, null);
+      return;
+    }
+
+    const data = after.data() as any;
+    const role = (data?.role ?? "").toString().trim();
+    const schoolId = (data?.schoolId ?? "").toString().trim();
+
+    const claims = {
+      role: role || "teacher",
+      schoolId: schoolId || "",
+    };
+
+    functions.logger.info("Setting claims for uid:", uid, claims);
+    await admin.auth().setCustomUserClaims(uid, claims);
+  });
