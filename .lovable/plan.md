@@ -1,55 +1,48 @@
 
 
-## Fix Firestore Permission Errors for Homerooms and Staff
+## Add syncClaimsFromUserRoles alongside existing lookupUserByEmail
 
-### Problem
-Firestore is rejecting all list queries to `homerooms` and `teachers` collections with "Missing or insufficient permissions." This affects:
-- Fetching homerooms (useClasses.ts)
-- Fetching staff members (useStaff.ts)  
-- Creating new homerooms
-
-The frontend guards are correct (uid, schoolId, and admin role are all present), so the issue is in the **deployed Firestore security rules**.
-
-### Root Cause
-Firestore's query validator evaluates list/query rules differently than single-document reads. When a read rule contains an OR condition like:
-```
-allow read: if isAdmin() && (resourceSameSchool() || isMissingSchoolId());
-```
-Firestore cannot guarantee from the query constraints alone that every returned document will pass. It therefore rejects the query entirely.
-
-### Solution
-Update `firestore.rules` to split read access into `get` (single document) and `list` (queries) for the `homerooms` and `teachers` collections:
-
-**For homerooms:**
-```
-match /homerooms/{homeroomId} {
-  allow get: if isAdmin() && hasSchool() && (resourceSameSchool() || isMissingSchoolId());
-  allow list: if isAdmin() && hasSchool();
-  allow create: if isAdmin() && requestSameSchool();
-  allow update: if (isAdmin() && resourceSameSchool()) || repairingMissingSchoolId();
-  allow delete: if isAdmin() && resourceSameSchool();
-}
-```
-
-**For teachers:**
-```
-match /teachers/{teacherId} {
-  allow get: if isAdmin() && hasSchool() && (resourceSameSchool() || isMissingSchoolId());
-  allow list: if isAdmin() && hasSchool();
-  allow create: if isAdmin() && requestSameSchool();
-  allow update: if (isAdmin() && resourceSameSchool()) || repairingMissingSchoolId();
-  allow delete: if isAdmin() && resourceSameSchool();
-}
-```
-
-This keeps strict per-document school checks for single reads, but allows list queries to succeed as long as the user is a confirmed admin with a valid school. The UI already filters by schoolId in the query, so only same-school data is returned.
+### What this does
+Adds a new Cloud Function that automatically syncs custom claims (role, schoolId) to Firebase Auth whenever a `user_roles/{uid}` document is created, updated, or deleted. This eliminates the need for the frontend to separately fetch role data from Firestore on every login.
 
 ### Changes
-- **1 file modified**: `firestore.rules` -- update homerooms and teachers read rules to split `get` vs `list`
 
-### After Approval
-Once the file is updated here, you must redeploy the rules to Firebase:
+**File: `functions/src/index.ts`**
+
+Keep the existing `lookupUserByEmail` function (v1) intact and add the new `syncClaimsFromUserRoles` function below it.
+
+Since Eventarc issues were previously encountered, the new function will use **v1 syntax** (`functions.firestore.document().onWrite()`) instead of the v2 `onDocumentWritten` to avoid deployment failures:
+
+```typescript
+export const syncClaimsFromUserRoles = functions.firestore
+  .document("user_roles/{uid}")
+  .onWrite(async (change, context) => {
+    const uid = context.params.uid;
+    const after = change.after;
+
+    if (!after.exists) {
+      functions.logger.info("Role doc deleted. Clearing claims for uid:", uid);
+      await admin.auth().setCustomUserClaims(uid, null);
+      return;
+    }
+
+    const data = after.data() as any;
+    const role = (data?.role ?? "").toString().trim();
+    const schoolId = (data?.schoolId ?? "").toString().trim();
+
+    const claims = {
+      role: role || "teacher",
+      schoolId: schoolId || "",
+    };
+
+    functions.logger.info("Setting claims for uid:", uid, claims);
+    await admin.auth().setCustomUserClaims(uid, claims);
+  });
 ```
-firebase deploy --only firestore:rules
-```
-The permission errors will persist until the updated rules are deployed.
+
+### Summary
+- **1 file modified**: `functions/src/index.ts`
+- Existing `lookupUserByEmail` preserved
+- New function uses v1 to avoid Eventarc issues
+- After updating, deploy with: `firebase deploy --only functions`
+
