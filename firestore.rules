@@ -2,58 +2,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if user is authenticated
+    // Helper: authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
     
-    // Helper function to check if user is an admin
+    // Helper: admin role from custom claims (set by Cloud Function)
     function isAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/user_roles/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/user_roles/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && request.auth.token.role == 'admin';
     }
     
-    // Helper function to get user's school ID
+    // Helper: user's school from custom claims
     function getUserSchool() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.schoolId;
+      return request.auth.token.schoolId;
     }
     
-    // Helper function to check if user belongs to the same school as the resource
+    // Helper: resource belongs to user's school
     function belongsToSameSchool() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        resource.data.schoolId == getUserSchool();
+      return isAuthenticated() && resource.data.schoolId == getUserSchool();
     }
     
-    // Helper function to check if new resource matches user's school
+    // Helper: new resource matches user's school
     function newResourceMatchesUserSchool() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        request.resource.data.schoolId == getUserSchool();
+      return isAuthenticated() && request.resource.data.schoolId == getUserSchool();
     }
     
-    // User profiles - users can only read/write their own profile
+    // User profiles
     match /users/{userId} {
       allow read: if isAuthenticated() && request.auth.uid == userId;
       allow write: if isAuthenticated() && request.auth.uid == userId && 
-        // Prevent users from modifying their own role
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
       allow create: if isAuthenticated() && request.auth.uid == userId;
     }
     
     // User roles - separate collection for security
-    // Only admins can read/write roles, users cannot modify their own roles
     match /user_roles/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow write: if isAdmin() && request.auth.uid != userId; // Admins can't change their own role
+      allow write: if isAdmin() && request.auth.uid != userId;
       allow create: if isAdmin();
       allow delete: if isAdmin() && request.auth.uid != userId;
     }
     
-    // Students collection - requires authentication AND school membership
+    // Students
     match /students/{studentId} {
-      // Read only students from user's school (or admin can read all)
       allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && 
         newResourceMatchesUserSchool() &&
@@ -66,7 +57,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Benchmarks collection - requires authentication AND school membership
+    // Benchmarks
     match /benchmarks/{benchmarkId} {
       allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && 
@@ -78,7 +69,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Markbook collection - requires authentication AND school membership
+    // Markbook
     match /markbook/{entryId} {
       allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && 
@@ -90,15 +81,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Homerooms collection - primary class identifier
+    // Homerooms (classes) - top-level collection
     match /homerooms/{homeroomId} {
-      // Single-doc read: admin with school, allow legacy docs missing schoolId
       allow get: if isAdmin() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         (resource.data.schoolId == getUserSchool() || !('schoolId' in resource.data));
-      // List/query read: admin with school (frontend filters by schoolId)
-      allow list: if isAdmin() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow list: if isAdmin();
       allow create: if isAdmin() && newResourceMatchesUserSchool();
       allow update: if isAdmin() && 
         (resource.data.schoolId == getUserSchool() || 
@@ -106,7 +93,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && resource.data.schoolId == getUserSchool();
     }
     
-    // Legacy classes collection - requires authentication AND school membership
+    // Legacy classes
     match /classes/{classId} {
       allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && newResourceMatchesUserSchool();
@@ -114,20 +101,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Schools collection - for multi-tenant support
+    // Schools
     match /schools/{schoolId} {
-      // Users can only read their own school
       allow read: if isAuthenticated() && getUserSchool() == schoolId;
       allow write: if isAdmin();
       
-      // School members subcollection
       match /members/{memberId} {
         allow read: if isAuthenticated() && getUserSchool() == schoolId;
         allow write: if isAdmin();
       }
     }
     
-    // Support plans - sensitive data, requires authentication AND school membership
+    // Support plans
     match /support_plans/{planId} {
       allow read: if isAuthenticated() && (belongsToSameSchool() || isAdmin());
       allow create: if isAuthenticated() && newResourceMatchesUserSchool();
@@ -135,15 +120,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
-    // Staff/Teachers collection - docId = Firebase UID
+    // Staff/Teachers - docId = Firebase UID
     match /teachers/{teacherId} {
-      // Single-doc read: admin with school, allow legacy docs missing schoolId
       allow get: if isAdmin() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         (resource.data.schoolId == getUserSchool() || !('schoolId' in resource.data));
-      // List/query read: admin with school (frontend filters by schoolId)
-      allow list: if isAdmin() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow list: if isAdmin();
       allow create: if isAdmin() && newResourceMatchesUserSchool();
       allow update: if isAdmin() && 
         (resource.data.schoolId == getUserSchool() || 

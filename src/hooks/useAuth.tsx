@@ -3,6 +3,7 @@ import {
   signInWithEmailAndPassword, 
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  getIdTokenResult,
   User as FirebaseUser
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -81,23 +82,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: 'teacher', // Default, will be updated
         });
         
-        // Fetch role and school from Firestore asynchronously using setTimeout to avoid deadlock
+        // Force-refresh the ID token so custom claims (role, schoolId) are available
+        // Then fall back to Firestore lookups if claims are missing
         setTimeout(async () => {
-          const [role, schoolId] = await Promise.all([
-            fetchUserRole(firebaseUser.uid),
-            fetchUserSchoolId(firebaseUser.uid)
-          ]);
-          
-          console.log('[Auth Debug] Final user state:', { uid: firebaseUser.uid, role, schoolId });
-          
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || undefined,
-            role,
-            schoolId,
-          });
-          setLoading(false);
+          try {
+            const tokenResult = await getIdTokenResult(firebaseUser, true);
+            const claimRole = tokenResult.claims.role as string | undefined;
+            const claimSchoolId = tokenResult.claims.schoolId as string | undefined;
+            console.log('[Auth Debug] Token claims:', { role: claimRole, schoolId: claimSchoolId });
+
+            // Use claims if available, otherwise fall back to Firestore
+            const [role, schoolId] = await Promise.all([
+              (claimRole === 'admin' || claimRole === 'teacher'
+                ? Promise.resolve(claimRole as 'admin' | 'teacher')
+                : fetchUserRole(firebaseUser.uid)),
+              claimSchoolId
+                ? Promise.resolve(claimSchoolId)
+                : fetchUserSchoolId(firebaseUser.uid),
+            ]);
+
+            console.log('[Auth Debug] Final user state:', { uid: firebaseUser.uid, role, schoolId });
+
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || undefined,
+              role,
+              schoolId,
+            });
+          } catch (err) {
+            console.error('[Auth Debug] Token refresh failed, falling back to Firestore:', err);
+            const [role, schoolId] = await Promise.all([
+              fetchUserRole(firebaseUser.uid),
+              fetchUserSchoolId(firebaseUser.uid),
+            ]);
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || undefined,
+              role,
+              schoolId,
+            });
+          } finally {
+            setLoading(false);
+          }
         }, 0);
       } else {
         setUser(null);
