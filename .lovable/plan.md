@@ -1,48 +1,43 @@
 
 
-## Add syncClaimsFromUserRoles alongside existing lookupUserByEmail
+## Fix: Classes Permission Error (Root Cause)
 
-### What this does
-Adds a new Cloud Function that automatically syncs custom claims (role, schoolId) to Firebase Auth whenever a `user_roles/{uid}` document is created, updated, or deleted. This eliminates the need for the frontend to separately fetch role data from Firestore on every login.
+There are **two independent problems** causing this, plus a misleading UI label:
+
+### Problem 1: Token never refreshed with custom claims
+Your Cloud Function (`syncClaimsFromUserRoles`) writes `role` and `schoolId` to the Firebase Auth token, but `useAuth.tsx` never calls `getIdTokenResult(firebaseUser, true)` to refresh the token. The Firestore SDK sends queries with a stale token.
+
+### Problem 2: Firestore rules use document lookups instead of claims
+The `isAdmin()` helper does `exists()` + `get()` on the `user_roles` collection on every single request. This is slow, costs extra reads, and can fail under certain conditions. Since you already have a Cloud Function syncing claims to the token, the rules should just read `request.auth.token.role` and `request.auth.token.schoolId`.
+
+### Problem 3: Misleading UI label
+The Admin tab shows `schools/{schoolId}/homerooms/{code}` as the path, but the actual code queries the top-level `/homerooms` collection. This is just a wrong label.
+
+---
 
 ### Changes
 
-**File: `functions/src/index.ts`**
+**File 1: `src/hooks/useAuth.tsx`**
+- Import `getIdTokenResult` from `firebase/auth`
+- Call `await getIdTokenResult(firebaseUser, true)` before `setUser` in the `onAuthStateChanged` callback
+- This ensures the Firestore SDK has a fresh token with `role` and `schoolId` claims before any queries fire
 
-Keep the existing `lookupUserByEmail` function (v1) intact and add the new `syncClaimsFromUserRoles` function below it.
+**File 2: `firestore.rules`**
+- Rewrite `isAdmin()` to use `request.auth.token.role == 'admin'` (no document lookup)
+- Rewrite `getUserSchool()` to use `request.auth.token.schoolId` (no document lookup)
+- Rewrite `belongsToSameSchool()` and `newResourceMatchesUserSchool()` to use `request.auth.token.schoolId`
+- Simplify homerooms and teachers rules to remove redundant `exists()` checks
+- Keep the same access control logic, just backed by claims instead of doc reads
 
-Since Eventarc issues were previously encountered, the new function will use **v1 syntax** (`functions.firestore.document().onWrite()`) instead of the v2 `onDocumentWritten` to avoid deployment failures:
+**File 3: `src/components/tabs/AdminTab.tsx`**
+- Fix the misleading path label from `schools/{schoolId}/homerooms/{code}` to `homerooms/{code}` (line 285)
 
-```typescript
-export const syncClaimsFromUserRoles = functions.firestore
-  .document("user_roles/{uid}")
-  .onWrite(async (change, context) => {
-    const uid = context.params.uid;
-    const after = change.after;
+---
 
-    if (!after.exists) {
-      functions.logger.info("Role doc deleted. Clearing claims for uid:", uid);
-      await admin.auth().setCustomUserClaims(uid, null);
-      return;
-    }
-
-    const data = after.data() as any;
-    const role = (data?.role ?? "").toString().trim();
-    const schoolId = (data?.schoolId ?? "").toString().trim();
-
-    const claims = {
-      role: role || "teacher",
-      schoolId: schoolId || "",
-    };
-
-    functions.logger.info("Setting claims for uid:", uid, claims);
-    await admin.auth().setCustomUserClaims(uid, claims);
-  });
+### After implementation
+You must redeploy the Firestore rules:
 ```
-
-### Summary
-- **1 file modified**: `functions/src/index.ts`
-- Existing `lookupUserByEmail` preserved
-- New function uses v1 to avoid Eventarc issues
-- After updating, deploy with: `firebase deploy --only functions`
+firebase deploy --only firestore:rules
+```
+Then log out and log back in so the token refreshes with the latest claims.
 
