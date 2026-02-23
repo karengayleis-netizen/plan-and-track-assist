@@ -282,7 +282,7 @@ export function AdminTab() {
             <div>
               <CardTitle>Class Management</CardTitle>
               <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                Paths: schools/{'{schoolId}'}/homerooms/{'{code}'}
+                Path: homerooms/{'{code}'}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 Create homerooms (classes), assign allowed grades for split-grade support
