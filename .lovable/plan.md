@@ -1,43 +1,44 @@
 
 
-## Fix: Classes Permission Error (Root Cause)
+## Fix: Create Firebase CLI config so rules actually deploy
 
-There are **two independent problems** causing this, plus a misleading UI label:
-
-### Problem 1: Token never refreshed with custom claims
-Your Cloud Function (`syncClaimsFromUserRoles`) writes `role` and `schoolId` to the Firebase Auth token, but `useAuth.tsx` never calls `getIdTokenResult(firebaseUser, true)` to refresh the token. The Firestore SDK sends queries with a stale token.
-
-### Problem 2: Firestore rules use document lookups instead of claims
-The `isAdmin()` helper does `exists()` + `get()` on the `user_roles` collection on every single request. This is slow, costs extra reads, and can fail under certain conditions. Since you already have a Cloud Function syncing claims to the token, the rules should just read `request.auth.token.role` and `request.auth.token.schoolId`.
-
-### Problem 3: Misleading UI label
-The Admin tab shows `schools/{schoolId}/homerooms/{code}` as the path, but the actual code queries the top-level `/homerooms` collection. This is just a wrong label.
-
----
+### Root cause
+There is no `firebase.json` or `.firebaserc` in the project. Without these, `firebase deploy --only firestore:rules` cannot locate the rules file or know which Firebase project to target. The rules currently live in Firebase are old/different from what's in this codebase.
 
 ### Changes
 
-**File 1: `src/hooks/useAuth.tsx`**
-- Import `getIdTokenResult` from `firebase/auth`
-- Call `await getIdTokenResult(firebaseUser, true)` before `setUser` in the `onAuthStateChanged` callback
-- This ensures the Firestore SDK has a fresh token with `role` and `schoolId` claims before any queries fire
+**File 1: `firebase.json`** (new)
+Create in project root with:
+```json
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "functions": {
+    "source": "functions"
+  }
+}
+```
 
-**File 2: `firestore.rules`**
-- Rewrite `isAdmin()` to use `request.auth.token.role == 'admin'` (no document lookup)
-- Rewrite `getUserSchool()` to use `request.auth.token.schoolId` (no document lookup)
-- Rewrite `belongsToSameSchool()` and `newResourceMatchesUserSchool()` to use `request.auth.token.schoolId`
-- Simplify homerooms and teachers rules to remove redundant `exists()` checks
-- Keep the same access control logic, just backed by claims instead of doc reads
-
-**File 3: `src/components/tabs/AdminTab.tsx`**
-- Fix the misleading path label from `schools/{schoolId}/homerooms/{code}` to `homerooms/{code}` (line 285)
-
----
+**File 2: `.firebaserc`** (new)
+Create in project root with:
+```json
+{
+  "projects": {
+    "default": "school-data-intervention-tool"
+  }
+}
+```
 
 ### After implementation
-You must redeploy the Firestore rules:
-```
-firebase deploy --only firestore:rules
-```
-Then log out and log back in so the token refreshes with the latest claims.
+
+1. In your terminal, navigate to the project root (the folder containing `firestore.rules`)
+2. Run: `firebase deploy --only firestore:rules`
+3. Verify in **Firebase Console > Firestore > Rules** that the rules now match — you should see the claims-based `isAdmin()` function using `request.auth.token.role == 'admin'`
+4. Log out and log back in to refresh your token
+
+### Technical details
+- The `firebase.json` file tells the CLI which local file contains Firestore rules and where Cloud Functions live
+- The `.firebaserc` file tells the CLI which Firebase project to deploy to (`school-data-intervention-tool`)
+- Without these files, the CLI either errors out or deploys from a different working directory, leaving old rules in place
 
