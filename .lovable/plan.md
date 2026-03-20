@@ -1,31 +1,31 @@
 
 
-## Sync local firestore.rules with live rules
+## Fix: Redeploy Firestore Rules
 
-### Problem
-The local `firestore.rules` uses **claims-based** auth (`request.auth.token.role`), but the **live** Firebase rules use **document-lookup** auth (`roleDoc()` reading from `user_roles`). These are fundamentally different approaches. If someone runs `firebase deploy --only firestore:rules`, it would overwrite the live rules with the wrong version.
+### Root Cause
+The live Firestore rules are from **Feb 9th** — they are stale. The current local `firestore.rules` (document-lookup based) has never been successfully deployed. Whatever rules are live may not match either the old claims-based or the new document-lookup approach.
 
-The permission errors are happening because `hasSchool()` in the live rules requires `user_roles/{uid}.schoolId` to be a non-empty string. If that field is missing, every homeroom and teacher query fails.
+### Steps
 
-### Changes
+**No code changes needed.** This is a deployment issue.
 
-**File 1: `firestore.rules`** — Replace entirely with the live rules the user pasted, which use `roleDoc()` document lookups instead of token claims.
+You need to run this command from your project root (where `firebase.json` lives):
 
-Key sections:
-- Helper functions: `signedIn()`, `uid()`, `roleDoc()`, `mySchoolId()`, `hasSchool()`, `isAdmin()`, `resourceSameSchool()`, `requestSameSchool()`, `isMissingSchoolId()`, `repairingMissingSchoolId()`
-- Collections: artifacts, users, user_roles, homerooms, teachers, students, benchmarks, markbook
-- Default deny-all catch rule
+```bash
+firebase deploy --only firestore:rules --project school-data-intervention-tool
+```
 
-### Manual step (critical)
-Open Firebase Console > Firestore > `user_roles` > `3Zg3r5UF6zgmP94zp9NKRMclhZg1` and confirm it has **both**:
-- `role`: `"admin"`
-- `schoolId`: `"folkstone_ps"`
+**After running it, verify:**
+1. The terminal output should say `Deploy complete!` and reference `school-data-intervention-tool`
+2. In Firebase Console → Firestore → Rules, the timestamp should update to today's date
+3. Log out and back into the app — the permission error should be gone
 
-If `schoolId` is missing, add it. This is what `hasSchool()` checks, and without it every admin query fails even though the UI shows the correct schoolId.
+### If the deploy command fails
+Share the exact terminal output so we can diagnose. Common issues:
+- Not logged into Firebase CLI (`firebase login`)
+- Wrong directory (must be where `firebase.json` lives)
+- Project permissions issue
 
-### Why this fixes it
-- Local rules will match live rules — no risk of accidental overwrite
-- Once `user_roles` doc has `schoolId`, the `hasSchool()` check passes
-- `isAdmin()` reads from the same doc, confirming admin role
-- Homeroom list/get and teacher list/get all gate on `isAdmin() && hasSchool()`
+### Alternative: paste rules manually
+If CLI deploy keeps failing, you can copy the entire contents of your local `firestore.rules` file and paste them directly into **Firebase Console → Firestore → Rules → Edit rules**, then click **Publish**.
 
