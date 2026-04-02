@@ -282,6 +282,12 @@ export function StudentsTab() {
       s.initials?.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
+      // Primary sort: homeroom code alphabetically
+      const homeA = a.homeroom || '';
+      const homeB = b.homeroom || '';
+      const homeCmp = homeA.localeCompare(homeB);
+      if (homeCmp !== 0) return homeCmp;
+      // Secondary sort: student number numerically
       const numA = parseInt(a.studentNumber?.split('-').pop() || '0', 10);
       const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
       return numA - numB;
