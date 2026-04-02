@@ -14,6 +14,7 @@ export interface Student {
   eal: boolean;
   isFocusStudent: boolean;
   isHighNeed: boolean;
+  gender?: string;
   createdAt: Date;
   updatedAt: Date;
 }
