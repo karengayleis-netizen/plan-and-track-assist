@@ -248,10 +248,16 @@ export function StudentsTab() {
     : students;
 
   // Filter by search query
-  const filteredStudents = classStudents.filter(s => 
-    s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.initials?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredStudents = classStudents
+    .filter(s => 
+      s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.initials?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      const numA = parseInt(a.studentNumber?.split('-').pop() || '0', 10);
+      const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
+      return numA - numB;
+    });
 
   return (
     <div className="space-y-6">
