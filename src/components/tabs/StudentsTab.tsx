@@ -248,6 +248,28 @@ export function StudentsTab() {
     }
   };
 
+  const openEditDialog = (student: Student) => {
+    setEditingStudent(student);
+    setEditFocus(student.isFocusStudent);
+    setEditHighNeed(student.isHighNeed);
+    setEditGender(student.gender || '');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingStudent) return;
+    try {
+      await updateStudent(editingStudent.id, {
+        isFocusStudent: editFocus,
+        isHighNeed: editHighNeed,
+        gender: editGender,
+      });
+      toast.success('Student updated');
+      setEditingStudent(null);
+    } catch {
+      toast.error('Failed to update student');
+    }
+  };
+
   // Filter students by selected homeroom
   const classStudents = selectedClass 
     ? students.filter(s => s.homeroom === selectedClass.code)
