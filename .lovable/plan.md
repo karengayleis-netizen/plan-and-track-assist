@@ -1,28 +1,49 @@
 
 
-## Fix: Sort All-Students View by Homeroom First, Then Number
+## Add Missing Assessment Types + Implement CSV Upload/Download for Benchmarks
 
-### Problem
-When admin views all students (no homeroom filter selected), the current sort only uses the numeric suffix. This groups all #1s together, then all #2s, etc. — teachers expect to see each homeroom's students grouped together in attendance order (1AF-1 through 1AF-20, then 2AF-1 through 2AF-20, etc.).
+### Changes
 
-### Fix
-**File: `src/components/tabs/StudentsTab.tsx`** (~line 284)
+**1. Add missing assessment types (`src/types/index.ts`, line 122-132)**
 
-Update the `.sort()` comparator to sort primarily by homeroom code, then by numeric suffix:
+Update `ASSESSMENT_TYPES` to include the requested benchmarks:
 
 ```typescript
-.sort((a, b) => {
-  // Primary sort: homeroom code alphabetically
-  const homeA = a.homeroom || '';
-  const homeB = b.homeroom || '';
-  const homeCmp = homeA.localeCompare(homeB);
-  if (homeCmp !== 0) return homeCmp;
-  // Secondary sort: student number numerically
-  const numA = parseInt(a.studentNumber?.split('-').pop() || '0', 10);
-  const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
-  return numA - numB;
-});
+export const ASSESSMENT_TYPES = [
+  'Acadience Reading',
+  'DIBELS',
+  'GB+ Reading',
+  'PM Benchmark',
+  'Running Record',
+  'DRA',
+  'Heggerty',
+  'UFLI',
+  'Knowledgehook',
+  'MathUp',
+  'Mathology',
+  'Math Interview',
+  'Writing Sample',
+  'Other'
+];
 ```
 
-Single change, one file. When a specific homeroom is selected the primary sort is a no-op (all same homeroom), so existing per-class behavior is unchanged.
+Grouped logically: reading assessments first, then phonics/foundational, then math, then writing, then catch-all.
+
+**2. Implement CSV upload and download (`src/components/tabs/BenchmarksTab.tsx`)**
+
+- **CSV Upload**: Parse the file using the 6-column format already documented in the UI: `StudentNumber, Type, Score, Date, Notes, Ref`. Match `StudentNumber` against loaded students to resolve `studentId`. Call `addBenchmark` for each valid row. Show toast with success/error count.
+
+- **CSV Download**: Export current benchmarks as CSV with headers `StudentNumber, Type, Score, Date, Notes, Ref`. Trigger browser download.
+
+- **Format help text**: Update the existing format hint to be clearer, showing an example row so teachers know exactly what to put in each column:
+  ```
+  Example: 1AF-3, Acadience Reading, Level 42, 2026-03-15, Spring assessment, REF-001
+  ```
+
+### Technical Details
+
+- CSV parsing: simple `split(',')` with trim — no external library needed
+- Download: create a Blob with `text/csv` MIME type, use a temporary `<a>` element
+- Student matching: look up by `studentNumber` field from the loaded students array
+- File input wired to state via `onChange`, read with `FileReader`
 
