@@ -146,6 +146,7 @@ export function StudentsTab() {
             eal: false,
             isFocusStudent: false,
             isHighNeed: false,
+            gender: genderStr?.trim().toUpperCase() || '',
           });
           successCount++;
         } catch (err) {
