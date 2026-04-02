@@ -14,7 +14,11 @@ import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 
 export function StudentsTab() {
-  const { students, loading, addStudent, deleteStudent, refetch } = useStudents();
+  const { students, loading, addStudent, updateStudent, deleteStudent, refetch } = useStudents();
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [editFocus, setEditFocus] = useState(false);
+  const [editHighNeed, setEditHighNeed] = useState(false);
+  const [editGender, setEditGender] = useState('');
   const { classes, loading: classesLoading, getClassByCode } = useClasses();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
