@@ -385,7 +385,21 @@ export function StudentsTab() {
               </div>
               
               <div>
-                <Label>Grade * (must match homeroom's allowed grades)</Label>
+              <div>
+                <Label>Gender</Label>
+                <Select value={selectedGender} onValueChange={setSelectedGender}>
+                  <SelectTrigger className="focus:ring-primary mt-1">
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Male</SelectItem>
+                    <SelectItem value="F">Female</SelectItem>
+                    <SelectItem value="X">Non-binary</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Label>Grade * (must match homeroom's allowed grades)</Label>
                 {selectedClass ? (
                   <Select value={selectedGrade} onValueChange={setSelectedGrade}>
                     <SelectTrigger className="focus:ring-primary mt-1">
