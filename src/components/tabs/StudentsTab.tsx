@@ -514,6 +514,7 @@ export function StudentsTab() {
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
+                      <TableCell>{student.gender || '—'}</TableCell>
                       <TableCell className="font-mono">{student.homeroom}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
