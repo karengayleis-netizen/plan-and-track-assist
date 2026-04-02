@@ -1,24 +1,27 @@
 
 
-## Fix: Allow CSV Upload with Privacy-First Format
+## Fix: Sort Students by Number in Roster Table
 
 ### Problem
-The `StudentSchema` validation requires `firstName` and `lastName` to be non-empty, but the CSV upload intentionally leaves these blank (using coded IDs like "1AF-3" instead of real names). This causes every row to fail with "Failed to save student".
+Firestore returns documents in arbitrary order. Students appear as 3, 11, 19, 9... instead of 1, 2, 3... which breaks the attendance-order expectation teachers rely on.
 
 ### Fix
-**Single file change: `src/lib/validations.ts`** (lines 8-9)
+**File: `src/components/tabs/StudentsTab.tsx`**
 
-Change:
+After filtering students by homeroom and search query (~line 196), sort `filteredStudents` by extracting the numeric suffix from the coded student number (e.g., "1AF-3" → 3) and sorting numerically:
+
 ```typescript
-firstName: z.string().min(1, 'First name is required').max(50, ...),
-lastName: z.string().min(1, 'Last name is required').max(50, ...),
+const filteredStudents = classStudents
+  .filter(s => 
+    s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.initials?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+  .sort((a, b) => {
+    const numA = parseInt(a.studentNumber?.split('-').pop() || '0', 10);
+    const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
+    return numA - numB;
+  });
 ```
 
-To:
-```typescript
-firstName: z.string().max(50, 'First name must be 50 characters or less').default(''),
-lastName: z.string().max(50, 'Last name must be 50 characters or less').default(''),
-```
-
-This is a one-line-each change. No other files are affected. The 4-column CSV format (`StudentNumber, Initials, Grade, Gender`) is already handled correctly in the upload logic.
+This is a single change in one file. Students will display in attendance order (1, 2, 3, ..., 20) as teachers expect.
 
