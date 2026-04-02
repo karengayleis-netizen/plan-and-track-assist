@@ -266,7 +266,8 @@ export function StudentsTab() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
-              CSV format: StudentNumber, Initials, Grade
+              CSV: StudentNumber, Initials, Grade, Gender
+            </p>
             </p>
           </div>
         </CardHeader>
