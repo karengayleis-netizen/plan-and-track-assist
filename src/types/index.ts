@@ -120,11 +120,16 @@ export interface TeacherAnalytics {
 
 // Assessment types for Benchmarks
 export const ASSESSMENT_TYPES = [
+  'Acadience Reading',
+  'DIBELS',
   'GB+ Reading',
   'PM Benchmark',
   'Running Record',
   'DRA',
   'Heggerty',
+  'UFLI',
+  'Knowledgehook',
+  'MathUp',
   'Mathology',
   'Math Interview',
   'Writing Sample',
