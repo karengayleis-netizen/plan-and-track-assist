@@ -501,6 +501,7 @@ export function StudentsTab() {
                   <TableHead>Student #</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Grade</TableHead>
+                  <TableHead>Gender</TableHead>
                   <TableHead>Homeroom</TableHead>
                   <TableHead>Flags</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
