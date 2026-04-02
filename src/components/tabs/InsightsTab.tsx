@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart, PieChart, Pie, Cell } from 'recharts';
 import { Users, AlertTriangle, Target, CheckCircle } from 'lucide-react';
 import { StatCard, InsightChart, chartColors, tooltipStyle, SectionHeader } from '@/components/dashboard';
 
@@ -39,6 +39,18 @@ export function InsightsTab() {
       stable: atRisk ? 0 : 1
     };
   });
+
+  // Gender distribution
+  const genderData = (() => {
+    const counts: Record<string, number> = {};
+    students.forEach(s => {
+      const g = s.gender?.toUpperCase() || 'Unknown';
+      counts[g] = (counts[g] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  })();
+
+  const genderColors = [chartColors.primary, chartColors.destructive, chartColors.purple, chartColors.warning];
 
   // Get selected student's benchmark trend
   const selectedStudentData = selectedStudent 
@@ -152,6 +164,34 @@ export function InsightsTab() {
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               No students yet. Add students to see performance data.
+            </div>
+          )}
+        </InsightChart>
+
+        <InsightChart title="Gender Distribution" description="Student breakdown by gender">
+          {genderData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={genderData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={80}
+                  paddingAngle={4}
+                  dataKey="value"
+                  label={({ name, value }) => `${name}: ${value}`}
+                >
+                  {genderData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={genderColors[index % genderColors.length]} />
+                  ))}
+                </Pie>
+                <Tooltip {...tooltipStyle} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              No gender data available yet.
             </div>
           )}
         </InsightChart>

@@ -26,6 +26,7 @@ export function StudentsTab() {
   const [selectedGrade, setSelectedGrade] = useState('');
   const [isFocusStudent, setIsFocusStudent] = useState(false);
   const [isHighNeed, setIsHighNeed] = useState(false);
+  const [selectedGender, setSelectedGender] = useState('');
 
   // Get selected class details
   const selectedClass = classes.find(c => c.id === selectedClassId);
@@ -117,7 +118,7 @@ export function StudentsTab() {
           continue;
         }
 
-        const [number, studentInitials, gradeStr] = values;
+        const [number, studentInitials, gradeStr, genderStr] = values;
         
         // Validate grade against homeroom
         const gradeValidation = validateGradeForHomeroom(gradeStr, selectedClass);
@@ -145,6 +146,7 @@ export function StudentsTab() {
             eal: false,
             isFocusStudent: false,
             isHighNeed: false,
+            gender: genderStr?.trim().toUpperCase() || '',
           });
           successCount++;
         } catch (err) {
@@ -214,6 +216,7 @@ export function StudentsTab() {
         eal: false,
         isFocusStudent,
         isHighNeed,
+        gender: selectedGender || '',
       });
       toast.success('Student saved successfully');
       // Reset form
@@ -222,6 +225,7 @@ export function StudentsTab() {
       setSelectedGrade('');
       setIsFocusStudent(false);
       setIsHighNeed(false);
+      setSelectedGender('');
     } catch (err) {
       toast.error('Failed to save student');
     }
@@ -262,7 +266,7 @@ export function StudentsTab() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
-              CSV format: StudentNumber, Initials, Grade
+              CSV: StudentNumber, Initials, Grade, Gender
             </p>
           </div>
         </CardHeader>
@@ -318,11 +322,12 @@ export function StudentsTab() {
                 </h4>
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
-                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade</code>
+                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender</code>
                   </p>
                   <p>
-                    Example: <code className="bg-muted px-1 rounded">1, JD, 4</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
+                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
                   </p>
+                  <p className="text-muted-foreground/70">Gender column is optional (M/F/X)</p>
                   {selectedClass && (
                     <p className="text-primary">
                       ✓ Allowed grades for {selectedClass.code}: {selectedClass.allowedGrades.map(g => formatGradeDisplay(g)).join(', ')}
@@ -381,7 +386,21 @@ export function StudentsTab() {
               </div>
               
               <div>
-                <Label>Grade * (must match homeroom's allowed grades)</Label>
+              <div>
+                <Label>Gender</Label>
+                <Select value={selectedGender} onValueChange={setSelectedGender}>
+                  <SelectTrigger className="focus:ring-primary mt-1">
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Male</SelectItem>
+                    <SelectItem value="F">Female</SelectItem>
+                    <SelectItem value="X">Non-binary</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Label>Grade * (must match homeroom's allowed grades)</Label>
                 {selectedClass ? (
                   <Select value={selectedGrade} onValueChange={setSelectedGrade}>
                     <SelectTrigger className="focus:ring-primary mt-1">
@@ -482,6 +501,7 @@ export function StudentsTab() {
                   <TableHead>Student #</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Grade</TableHead>
+                  <TableHead>Gender</TableHead>
                   <TableHead>Homeroom</TableHead>
                   <TableHead>Flags</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
@@ -494,6 +514,7 @@ export function StudentsTab() {
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
+                      <TableCell>{student.gender || '—'}</TableCell>
                       <TableCell className="font-mono">{student.homeroom}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
@@ -524,7 +545,7 @@ export function StudentsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       {selectedClass ? 'No students in this homeroom yet.' : 'No students added yet.'}
                     </TableCell>
                   </TableRow>
