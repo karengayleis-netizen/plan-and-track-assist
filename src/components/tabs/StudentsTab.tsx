@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,9 +12,14 @@ import { useClasses } from '@/hooks/useClasses';
 import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
+import { Student } from '@/types';
 
 export function StudentsTab() {
-  const { students, loading, addStudent, deleteStudent, refetch } = useStudents();
+  const { students, loading, addStudent, updateStudent, deleteStudent, refetch } = useStudents();
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [editFocus, setEditFocus] = useState(false);
+  const [editHighNeed, setEditHighNeed] = useState(false);
+  const [editGender, setEditGender] = useState('');
   const { classes, loading: classesLoading, getClassByCode } = useClasses();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -239,6 +245,28 @@ export function StudentsTab() {
       } catch (err) {
         toast.error('Failed to delete student');
       }
+    }
+  };
+
+  const openEditDialog = (student: Student) => {
+    setEditingStudent(student);
+    setEditFocus(student.isFocusStudent);
+    setEditHighNeed(student.isHighNeed);
+    setEditGender(student.gender || '');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingStudent) return;
+    try {
+      await updateStudent(editingStudent.id, {
+        isFocusStudent: editFocus,
+        isHighNeed: editHighNeed,
+        gender: editGender,
+      });
+      toast.success('Student updated');
+      setEditingStudent(null);
+    } catch {
+      toast.error('Failed to update student');
     }
   };
 
@@ -534,7 +562,7 @@ export function StudentsTab() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-primary">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-primary" onClick={() => openEditDialog(student)}>
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button 
@@ -565,6 +593,52 @@ export function StudentsTab() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Edit Student Dialog */}
+      <Dialog open={!!editingStudent} onOpenChange={(open) => !open && setEditingStudent(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Student {editingStudent?.studentNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Gender</Label>
+              <Select value={editGender} onValueChange={setEditGender}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="M">Male</SelectItem>
+                  <SelectItem value="F">Female</SelectItem>
+                  <SelectItem value="X">Non-binary</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1 border border-primary/20">
+                <Checkbox
+                  id="editFocus"
+                  checked={editFocus}
+                  onCheckedChange={(checked) => setEditFocus(checked as boolean)}
+                />
+                <Label htmlFor="editFocus" className="text-primary text-sm font-medium">Focus Student</Label>
+              </div>
+              <div className="flex items-center space-x-2 p-2 bg-destructive/10 rounded-lg flex-1 border border-destructive/20">
+                <Checkbox
+                  id="editHighNeed"
+                  checked={editHighNeed}
+                  onCheckedChange={(checked) => setEditHighNeed(checked as boolean)}
+                />
+                <Label htmlFor="editHighNeed" className="text-destructive text-sm font-medium">High Need</Label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingStudent(null)}>Cancel</Button>
+            <Button onClick={handleSaveEdit}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
