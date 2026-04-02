@@ -12,6 +12,7 @@ import { useClasses } from '@/hooks/useClasses';
 import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
+import { Student } from '@/types';
 
 export function StudentsTab() {
   const { students, loading, addStudent, updateStudent, deleteStudent, refetch } = useStudents();
