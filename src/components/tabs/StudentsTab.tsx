@@ -593,6 +593,52 @@ export function StudentsTab() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Edit Student Dialog */}
+      <Dialog open={!!editingStudent} onOpenChange={(open) => !open && setEditingStudent(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Student {editingStudent?.studentNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Gender</Label>
+              <Select value={editGender} onValueChange={setEditGender}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="M">Male</SelectItem>
+                  <SelectItem value="F">Female</SelectItem>
+                  <SelectItem value="X">Non-binary</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1 border border-primary/20">
+                <Checkbox
+                  id="editFocus"
+                  checked={editFocus}
+                  onCheckedChange={(checked) => setEditFocus(checked as boolean)}
+                />
+                <Label htmlFor="editFocus" className="text-primary text-sm font-medium">Focus Student</Label>
+              </div>
+              <div className="flex items-center space-x-2 p-2 bg-destructive/10 rounded-lg flex-1 border border-destructive/20">
+                <Checkbox
+                  id="editHighNeed"
+                  checked={editHighNeed}
+                  onCheckedChange={(checked) => setEditHighNeed(checked as boolean)}
+                />
+                <Label htmlFor="editHighNeed" className="text-destructive text-sm font-medium">High Need</Label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingStudent(null)}>Cancel</Button>
+            <Button onClick={handleSaveEdit}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
