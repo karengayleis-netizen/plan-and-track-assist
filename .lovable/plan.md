@@ -1,140 +1,41 @@
 
 
-## Fix: Manually publish updated Firestore rules
+## Add Gender Field to Student Data
 
-### Root Cause
-The Lovable codebase has the correct `firestore.rules`, but the user's local Windows project folder has the old version. Firebase CLI sees no change in the local file, so it skips the upload.
+### What Changes
+A `gender` field gets added to the Student type and flows through CSV upload, manual entry, display, and the Insights tab for gender-based analytics.
 
-### No code changes needed
+### Impact Assessment
+This is a **low-risk, additive change** — no existing fields or logic are modified, just extended.
 
-### Manual Steps
+### Files to Change
 
-1. **Open Firebase Console → Firestore → Rules**
-2. **Select all** existing rules and **delete** them
-3. **Copy the entire content below** and paste it into the editor:
+**1. Student type** (`src/types/index.ts`)
+- Add `gender?: string` to the `Student` interface (optional so existing data isn't broken)
 
-```
-rules_version = '2';
+**2. Validation schema** (`src/lib/validations.ts`)
+- Add optional `gender` field to `StudentSchema`
 
-service cloud.firestore {
-  match /databases/{database}/documents {
+**3. CSV upload** (`src/components/tabs/StudentsTab.tsx`)
+- Change expected format from 3 columns to 4: `StudentNumber, Initials, Grade, Gender`
+- Keep backward-compatible: if only 3 columns, gender defaults to empty
+- Pass `gender` into `addStudent()`
 
-    function signedIn() { return request.auth != null; }
-    function uid() { return request.auth.uid; }
+**4. Manual entry form** (`src/components/tabs/StudentsTab.tsx`)
+- Add a Gender dropdown (M / F / X / blank) in the manual add form
 
-    function roleDoc() {
-      return get(/databases/$(database)/documents/user_roles/$(uid()));
-    }
+**5. Student table display** (`src/components/tabs/StudentsTab.tsx`)
+- Add Gender column to the roster table
 
-    function mySchoolId() {
-      return roleDoc().data.schoolId;
-    }
+**6. Insights tab** (`src/components/tabs/InsightsTab.tsx`)
+- Add a gender breakdown stat card or chart (e.g., bar chart showing at-risk counts by gender, or a simple distribution pie)
 
-    function hasSchool() {
-      return signedIn()
-        && roleDoc().exists()
-        && mySchoolId() != null
-        && mySchoolId() != "";
-    }
+### CSV Format Change
+Your CSV columns become: `StudentNumber, Initials, Grade, Gender`
+- Gender column is optional — rows with only 3 columns still work
+- Your existing Excel file already has the Gender column, so you just need to include it when saving to CSV
 
-    function isAdmin() {
-      return signedIn()
-        && roleDoc().exists()
-        && roleDoc().data.role == "admin";
-    }
-
-    function resourceSameSchool() {
-      return hasSchool()
-        && ('schoolId' in resource.data)
-        && resource.data.schoolId == mySchoolId();
-    }
-
-    function requestSameSchool() {
-      return hasSchool()
-        && ('schoolId' in request.resource.data)
-        && request.resource.data.schoolId == mySchoolId();
-    }
-
-    function isMissingSchoolId() {
-      return !('schoolId' in resource.data) || resource.data.schoolId == null || resource.data.schoolId == "";
-    }
-
-    function repairingMissingSchoolId() {
-      return isAdmin()
-        && hasSchool()
-        && isMissingSchoolId()
-        && ('schoolId' in request.resource.data)
-        && request.resource.data.schoolId == mySchoolId();
-    }
-
-    match /artifacts/{artifactId}/users/{userId} {
-      allow read, write: if signedIn() && uid() == userId;
-      match /{document=**} {
-        allow read, write: if signedIn() && uid() == userId;
-      }
-    }
-
-    match /users/{userId} {
-      allow read, write: if signedIn() && uid() == userId;
-    }
-
-    match /user_roles/{userId} {
-      allow read: if signedIn() && uid() == userId;
-      allow write: if isAdmin();
-    }
-
-    match /homerooms/{homeroomId} {
-      allow list: if isAdmin() && hasSchool();
-      allow get: if isAdmin() && hasSchool() && (resourceSameSchool() || isMissingSchoolId());
-      allow create: if isAdmin() && requestSameSchool();
-      allow update: if (isAdmin() && resourceSameSchool()) || repairingMissingSchoolId();
-      allow delete: if isAdmin() && resourceSameSchool();
-    }
-
-    match /teachers/{teacherUid} {
-      allow list: if isAdmin() && hasSchool();
-      allow get: if isAdmin() && hasSchool() && (resourceSameSchool() || isMissingSchoolId());
-      allow create: if isAdmin() && requestSameSchool();
-      allow update: if (isAdmin() && resourceSameSchool()) || repairingMissingSchoolId();
-      allow delete: if isAdmin() && resourceSameSchool();
-    }
-
-    match /students/{id} {
-      allow read: if resourceSameSchool();
-      allow create: if requestSameSchool();
-      allow update: if resourceSameSchool() && requestSameSchool();
-      allow delete: if resourceSameSchool();
-    }
-
-    match /benchmarks/{id} {
-      allow read: if resourceSameSchool();
-      allow create: if requestSameSchool();
-      allow update: if resourceSameSchool() && requestSameSchool();
-      allow delete: if resourceSameSchool();
-    }
-
-    match /markbook/{id} {
-      allow read: if resourceSameSchool();
-      allow create: if requestSameSchool();
-      allow update: if resourceSameSchool() && requestSameSchool();
-      allow delete: if resourceSameSchool();
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-```
-
-4. Click **Publish**
-5. Confirm the timestamp updates to today
-6. Log out and back into the app — the permission errors should be resolved
-
-### Key differences from the live (Feb 9th) rules
-- `hasSchool()` now also checks `mySchoolId() != ""` (prevents empty string bypass)
-- `homerooms` and `teachers` get rules include `|| isMissingSchoolId()` (allows reading legacy docs)
-- `homerooms` and `teachers` update rules include `repairingMissingSchoolId()` (allows fixing legacy docs)
-- `homerooms` has a delete rule
-- `users/{userId}` match now allows read/write for own profile
+### Technical Details
+- `gender` is stored as an optional string field in Firestore — no migration needed for existing students (they'll just have `undefined`)
+- All existing queries and hooks remain unchanged since it's just an additional field on the document
 
