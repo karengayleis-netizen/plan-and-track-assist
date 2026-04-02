@@ -1,27 +1,28 @@
 
 
-## Fix: Sort Students by Number in Roster Table
+## Fix: Sort All-Students View by Homeroom First, Then Number
 
 ### Problem
-Firestore returns documents in arbitrary order. Students appear as 3, 11, 19, 9... instead of 1, 2, 3... which breaks the attendance-order expectation teachers rely on.
+When admin views all students (no homeroom filter selected), the current sort only uses the numeric suffix. This groups all #1s together, then all #2s, etc. — teachers expect to see each homeroom's students grouped together in attendance order (1AF-1 through 1AF-20, then 2AF-1 through 2AF-20, etc.).
 
 ### Fix
-**File: `src/components/tabs/StudentsTab.tsx`**
+**File: `src/components/tabs/StudentsTab.tsx`** (~line 284)
 
-After filtering students by homeroom and search query (~line 196), sort `filteredStudents` by extracting the numeric suffix from the coded student number (e.g., "1AF-3" → 3) and sorting numerically:
+Update the `.sort()` comparator to sort primarily by homeroom code, then by numeric suffix:
 
 ```typescript
-const filteredStudents = classStudents
-  .filter(s => 
-    s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.initials?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-  .sort((a, b) => {
-    const numA = parseInt(a.studentNumber?.split('-').pop() || '0', 10);
-    const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
-    return numA - numB;
-  });
+.sort((a, b) => {
+  // Primary sort: homeroom code alphabetically
+  const homeA = a.homeroom || '';
+  const homeB = b.homeroom || '';
+  const homeCmp = homeA.localeCompare(homeB);
+  if (homeCmp !== 0) return homeCmp;
+  // Secondary sort: student number numerically
+  const numA = parseInt(a.studentNumber?.split('-').pop() || '0', 10);
+  const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
+  return numA - numB;
+});
 ```
 
-This is a single change in one file. Students will display in attendance order (1, 2, 3, ..., 20) as teachers expect.
+Single change, one file. When a specific homeroom is selected the primary sort is a no-op (all same homeroom), so existing per-class behavior is unchanged.
 
