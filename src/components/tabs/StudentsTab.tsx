@@ -118,7 +118,7 @@ export function StudentsTab() {
           continue;
         }
 
-        const [number, studentInitials, gradeStr] = values;
+        const [number, studentInitials, gradeStr, genderStr] = values;
         
         // Validate grade against homeroom
         const gradeValidation = validateGradeForHomeroom(gradeStr, selectedClass);
