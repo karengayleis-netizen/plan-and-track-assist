@@ -225,6 +225,7 @@ export function StudentsTab() {
       setSelectedGrade('');
       setIsFocusStudent(false);
       setIsHighNeed(false);
+      setSelectedGender('');
     } catch (err) {
       toast.error('Failed to save student');
     }
