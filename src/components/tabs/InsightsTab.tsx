@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart, PieChart, Pie, Cell } from 'recharts';
 import { Users, AlertTriangle, Target, CheckCircle } from 'lucide-react';
 import { StatCard, InsightChart, chartColors, tooltipStyle, SectionHeader } from '@/components/dashboard';
 
