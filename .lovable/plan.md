@@ -1,14 +1,24 @@
 
 
-## Fix: CSV Upload Failing Due to Validation Mismatch
+## Fix: Allow CSV Upload with Privacy-First Format
 
 ### Problem
-The `StudentSchema` in `src/lib/validations.ts` requires `firstName` and `lastName` to be non-empty (`min(1)`), but the CSV upload deliberately passes empty strings for privacy (students are identified by coded IDs like "1AF-3", not real names). This causes every row to fail validation.
+The `StudentSchema` validation requires `firstName` and `lastName` to be non-empty, but the CSV upload intentionally leaves these blank (using coded IDs like "1AF-3" instead of real names). This causes every row to fail with "Failed to save student".
 
 ### Fix
-**File: `src/lib/validations.ts`** (lines 8-9)
-- Change `firstName` from `z.string().min(1, ...)` to `z.string().max(50).default('')`
-- Change `lastName` from `z.string().min(1, ...)` to `z.string().max(50).default('')`
+**Single file change: `src/lib/validations.ts`** (lines 8-9)
 
-This matches the app's privacy-first design where names are optional. No other files need changes.
+Change:
+```typescript
+firstName: z.string().min(1, 'First name is required').max(50, ...),
+lastName: z.string().min(1, 'Last name is required').max(50, ...),
+```
+
+To:
+```typescript
+firstName: z.string().max(50, 'First name must be 50 characters or less').default(''),
+lastName: z.string().max(50, 'Last name must be 50 characters or less').default(''),
+```
+
+This is a one-line-each change. No other files are affected. The 4-column CSV format (`StudentNumber, Initials, Grade, Gender`) is already handled correctly in the upload logic.
 
