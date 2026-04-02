@@ -216,6 +216,7 @@ export function StudentsTab() {
         eal: false,
         isFocusStudent,
         isHighNeed,
+        gender: selectedGender || '',
       });
       toast.success('Student saved successfully');
       // Reset form
