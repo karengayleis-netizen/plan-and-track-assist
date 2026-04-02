@@ -40,6 +40,18 @@ export function InsightsTab() {
     };
   });
 
+  // Gender distribution
+  const genderData = (() => {
+    const counts: Record<string, number> = {};
+    students.forEach(s => {
+      const g = s.gender?.toUpperCase() || 'Unknown';
+      counts[g] = (counts[g] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  })();
+
+  const genderColors = [chartColors.primary, chartColors.destructive, chartColors.purple, chartColors.muted];
+
   // Get selected student's benchmark trend
   const selectedStudentData = selectedStudent 
     ? benchmarks
