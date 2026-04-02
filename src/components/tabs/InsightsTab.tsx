@@ -50,7 +50,7 @@ export function InsightsTab() {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   })();
 
-  const genderColors = [chartColors.primary, chartColors.destructive, chartColors.purple, chartColors.muted];
+  const genderColors = [chartColors.primary, chartColors.destructive, chartColors.purple, chartColors.warning];
 
   // Get selected student's benchmark trend
   const selectedStudentData = selectedStudent 
