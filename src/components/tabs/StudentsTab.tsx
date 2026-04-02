@@ -322,11 +322,12 @@ export function StudentsTab() {
                 </h4>
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
-                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade</code>
+                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender</code>
                   </p>
                   <p>
-                    Example: <code className="bg-muted px-1 rounded">1, JD, 4</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
+                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
                   </p>
+                  <p className="text-muted-foreground/70">Gender column is optional (M/F/X)</p>
                   {selectedClass && (
                     <p className="text-primary">
                       ✓ Allowed grades for {selectedClass.code}: {selectedClass.allowedGrades.map(g => formatGradeDisplay(g)).join(', ')}
