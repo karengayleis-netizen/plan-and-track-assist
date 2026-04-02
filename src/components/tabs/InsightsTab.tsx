@@ -167,6 +167,34 @@ export function InsightsTab() {
             </div>
           )}
         </InsightChart>
+
+        <InsightChart title="Gender Distribution" description="Student breakdown by gender">
+          {genderData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={genderData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={80}
+                  paddingAngle={4}
+                  dataKey="value"
+                  label={({ name, value }) => `${name}: ${value}`}
+                >
+                  {genderData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={genderColors[index % genderColors.length]} />
+                  ))}
+                </Pie>
+                <Tooltip {...tooltipStyle} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              No gender data available yet.
+            </div>
+          )}
+        </InsightChart>
       </div>
 
       {/* Student Deep Dive */}
