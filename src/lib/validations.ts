@@ -5,8 +5,8 @@ import { GRADES, SUBJECTS, ASSESSMENT_TYPES } from '@/types';
 export const StudentSchema = z.object({
   studentNumber: z.string().min(1, 'Student number is required').max(20, 'Student number must be 20 characters or less'),
   initials: z.string().max(10, 'Initials must be 10 characters or less').default(''),
-  firstName: z.string().min(1, 'First name is required').max(50, 'First name must be 50 characters or less'),
-  lastName: z.string().min(1, 'Last name is required').max(50, 'Last name must be 50 characters or less'),
+  firstName: z.string().max(50, 'First name must be 50 characters or less').default(''),
+  lastName: z.string().max(50, 'Last name must be 50 characters or less').default(''),
   grade: z.string().min(1, 'Grade is required'),
   homeroom: z.string().max(20, 'Homeroom must be 20 characters or less').default(''),
   seat: z.string().max(10, 'Seat must be 10 characters or less').optional(),
