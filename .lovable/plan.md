@@ -1,49 +1,62 @@
 
 
-## Add Missing Assessment Types + Implement CSV Upload/Download for Benchmarks
+## Fix: Teacher Can't See Classes (Ruchi Bhardwaj)
 
-### Changes
+### Root Causes
 
-**1. Add missing assessment types (`src/types/index.ts`, line 122-132)**
+1. **Missing `user_roles` document in Firestore** — Ruchi's UID (`I9RDwJ3ADmYaOyo0eRaxWtz9yok1`) has no entry in the `user_roles` collection. The Firestore security rules rely on this document to authorize all reads (students, homerooms, etc.). Without it, every query is denied.
 
-Update `ASSESSMENT_TYPES` to include the requested benchmarks:
+2. **`useClasses` hook blocks non-admin users** — The hook has a guard that returns empty if `role !== 'admin'`, so teachers never load the homeroom list even if Firestore would allow it.
+
+### Required Actions
+
+**Action 1: Create the missing Firestore document (manual, in Firebase Console)**
+
+Go to Firebase Console → Firestore → `user_roles` collection → Add document with ID `I9RDwJ3ADmYaOyo0eRaxWtz9yok1`:
+- `role`: `"teacher"`
+- `schoolId`: `"folkstone_ps"`
+
+This must be done for every teacher account — it's how the security rules authorize access.
+
+**Action 2: Update `useClasses` to allow teachers to fetch homerooms**
+
+**File: `src/hooks/useClasses.ts`** (~line 27)
+
+Change the guard from requiring `admin` to just requiring a valid `schoolId`. Teachers need to see the class list to filter students by homeroom. The Firestore rules already enforce school-level isolation, so this is safe.
 
 ```typescript
-export const ASSESSMENT_TYPES = [
-  'Acadience Reading',
-  'DIBELS',
-  'GB+ Reading',
-  'PM Benchmark',
-  'Running Record',
-  'DRA',
-  'Heggerty',
-  'UFLI',
-  'Knowledgehook',
-  'MathUp',
-  'Mathology',
-  'Math Interview',
-  'Writing Sample',
-  'Other'
-];
+// Before:
+if (!user?.uid || !user?.schoolId || role !== 'admin') {
+
+// After:
+if (!user?.uid || !user?.schoolId) {
 ```
 
-Grouped logically: reading assessments first, then phonics/foundational, then math, then writing, then catch-all.
+Also update the `useEffect` trigger (~line 138) to remove the admin check:
+```typescript
+// Before:
+if (user?.schoolId && role === 'admin') {
 
-**2. Implement CSV upload and download (`src/components/tabs/BenchmarksTab.tsx`)**
+// After:
+if (user?.schoolId) {
+```
 
-- **CSV Upload**: Parse the file using the 6-column format already documented in the UI: `StudentNumber, Type, Score, Date, Notes, Ref`. Match `StudentNumber` against loaded students to resolve `studentId`. Call `addBenchmark` for each valid row. Show toast with success/error count.
+Note: Write operations (add/update/delete class) are already protected by Firestore rules that require admin role, so removing the read guard doesn't create a security issue.
 
-- **CSV Download**: Export current benchmarks as CSV with headers `StudentNumber, Type, Score, Date, Notes, Ref`. Trigger browser download.
+**Action 3: Update Firestore security rules for teacher homeroom reads**
 
-- **Format help text**: Update the existing format hint to be clearer, showing an example row so teachers know exactly what to put in each column:
-  ```
-  Example: 1AF-3, Acadience Reading, Level 42, 2026-03-15, Spring assessment, REF-001
-  ```
+Currently `homerooms` rules only allow admin access. Teachers need read access to see the class dropdown:
 
-### Technical Details
+```
+match /homerooms/{homeroomId} {
+  allow list: if hasSchool();                    // was: isAdmin() && hasSchool()
+  allow get: if hasSchool() && (resourceSameSchool() || isMissingSchoolId());  // was: isAdmin() && ...
+  // create/update/delete remain admin-only (unchanged)
+}
+```
 
-- CSV parsing: simple `split(',')` with trim — no external library needed
-- Download: create a Blob with `text/csv` MIME type, use a temporary `<a>` element
-- Student matching: look up by `studentNumber` field from the loaded students array
-- File input wired to state via `onChange`, read with `FileReader`
+### Summary
+- One manual Firestore document creation (and for any future teachers)
+- Two small code changes in `useClasses.ts`
+- One Firestore rules update for teacher read access to homerooms
 
