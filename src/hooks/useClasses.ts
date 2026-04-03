@@ -28,7 +28,7 @@ export function useClasses() {
       userRole: user?.role,
     });
     
-    if (!user?.uid || !user?.schoolId || role !== 'admin') {
+    if (!user?.uid || !user?.schoolId) {
       console.log('[useClasses] Guard blocked fetch — missing uid, schoolId, or not admin');
       setClasses([]);
       setLoading(false);
@@ -159,7 +159,7 @@ export function useClasses() {
   }, [user?.role, classes]);
 
   useEffect(() => {
-    if (user?.schoolId && role === 'admin') {
+    if (user?.schoolId) {
       fetchClasses();
     }
   }, [user?.schoolId, role, fetchClasses]);
