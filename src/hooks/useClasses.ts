@@ -159,7 +159,7 @@ export function useClasses() {
   }, [user?.role, classes]);
 
   useEffect(() => {
-    if (user?.schoolId && role === 'admin') {
+    if (user?.schoolId) {
       fetchClasses();
     }
   }, [user?.schoolId, role, fetchClasses]);

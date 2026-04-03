@@ -75,8 +75,8 @@ service cloud.firestore {
 
     // HOMEROOMS
     match /homerooms/{homeroomId} {
-      allow list: if isAdmin() && hasSchool();
-      allow get: if isAdmin() && hasSchool() && (resourceSameSchool() || isMissingSchoolId());
+      allow list: if hasSchool();
+      allow get: if hasSchool() && (resourceSameSchool() || isMissingSchoolId());
       allow create: if isAdmin() && requestSameSchool();
       allow update: if (isAdmin() && resourceSameSchool()) || repairingMissingSchoolId();
       allow delete: if isAdmin() && resourceSameSchool();
