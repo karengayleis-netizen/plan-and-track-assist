@@ -15,10 +15,12 @@ import { useAuth } from '@/hooks/useAuth';
 import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
-import { Student } from '@/types';
+import { Student, STUDENT_TAGS } from '@/types';
 import { freshnessLabel, isStale } from '@/lib/freshness';
 import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
 import { BulkActionsBar } from '@/components/students/BulkActionsBar';
+import { TagInput } from '@/components/ui/tag-input';
+import { Badge } from '@/components/ui/badge';
 
 export function StudentsTab() {
   const { user } = useAuth();
