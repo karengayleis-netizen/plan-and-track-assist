@@ -8,6 +8,7 @@ import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { ASSESSMENT_TYPES } from '@/types';
 import { Download, Calendar, FileText, Upload, Wand2 } from 'lucide-react';
+import { freshnessLabel, isStale } from '@/lib/freshness';
 import { toast } from 'sonner';
 
 import { ImportWizard } from '@/components/benchmarks/ImportWizard';
