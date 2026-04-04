@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart, PieChart, Pie, Cell } from 'recharts';
-import { Users, AlertTriangle, Target, CheckCircle } from 'lucide-react';
+import { Users, AlertTriangle, Target, CheckCircle, Tag } from 'lucide-react';
 import { StatCard, InsightChart, chartColors, tooltipStyle, SectionHeader } from '@/components/dashboard';
 
 export function InsightsTab() {
