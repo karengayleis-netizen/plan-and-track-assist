@@ -580,6 +580,12 @@ export function StudentsTab() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filteredStudents.length > 0 && selectedIds.size === filteredStudents.length}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Student #</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Grade</TableHead>
@@ -593,7 +599,19 @@ export function StudentsTab() {
               <TableBody>
                 {filteredStudents.length > 0 ? (
                   filteredStudents.map(student => (
-                    <TableRow key={student.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSummaryStudent(student)}>
+                    <TableRow key={student.id} className={`hover:bg-muted/30 cursor-pointer ${selectedIds.has(student.id) ? 'bg-primary/5' : ''}`} onClick={() => setSummaryStudent(student)}>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(student.id)}
+                          onCheckedChange={() => {
+                            setSelectedIds(prev => {
+                              const next = new Set(prev);
+                              next.has(student.id) ? next.delete(student.id) : next.add(student.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
