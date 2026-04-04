@@ -9,6 +9,7 @@ import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { ASSESSMENT_TYPES } from '@/types';
 import { Download, Calendar, FileText, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { hashOEN } from '@/lib/oenHash';
 
 export function BenchmarksTab() {
   const { students } = useStudents();
