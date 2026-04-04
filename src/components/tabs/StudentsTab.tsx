@@ -138,9 +138,11 @@ export function StudentsTab() {
 
         // Generate coded student number: homeroom-number (e.g., "2AF-1")
         const codedStudentNumber = `${selectedClass.code}-${number.trim()}`;
+        const stableId = `${selectedClass.code}-${number.trim()}`.trim();
         
         try {
           await addStudent({
+            stableStudentId: stableId,
             studentNumber: codedStudentNumber,
             initials: studentInitials.trim(),
             firstName: '',
@@ -205,9 +207,11 @@ export function StudentsTab() {
     }
 
     const codedStudentNumber = `${selectedClass.code}-${studentNumber.trim()}`;
+    const stableId = codedStudentNumber.trim();
     
     try {
       await addStudent({
+        stableStudentId: stableId,
         studentNumber: codedStudentNumber,
         initials: initials.trim(),
         firstName: '',

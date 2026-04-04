@@ -63,9 +63,19 @@ export function useStudents() {
       throw new Error(errorMsg);
     }
 
+    // Check for duplicate stableStudentId within the school
+    const normalizedId = validation.data.stableStudentId.trim();
+    const duplicate = students.find(s => s.stableStudentId === normalizedId);
+    if (duplicate) {
+      const errorMsg = `A student with stable ID "${normalizedId}" already exists`;
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+
     try {
       const docRef = await addDoc(collection(db, 'students'), {
         ...validation.data,
+        stableStudentId: normalizedId,
         schoolId: user?.schoolId, // Associate with user's school
         createdAt: new Date(),
         updatedAt: new Date(),
