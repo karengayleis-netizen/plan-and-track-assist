@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { LoginForm } from '@/components/auth/LoginForm';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -10,11 +10,23 @@ import { TriangulationTab } from '@/components/tabs/TriangulationTab';
 import { MissingDataTab } from '@/components/tabs/MissingDataTab';
 import { SupportPlanTab } from '@/components/tabs/SupportPlanTab';
 import { AdminTab } from '@/components/tabs/AdminTab';
+import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
+import { useStudents } from '@/hooks/useStudents';
+import { useBenchmarks } from '@/hooks/useBenchmarks';
+import { useMarkbook } from '@/hooks/useMarkbook';
+import { Student } from '@/types';
 import { Loader2 } from 'lucide-react';
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('students');
+  const [globalSummaryStudent, setGlobalSummaryStudent] = useState<Student | null>(null);
+  const { benchmarks } = useBenchmarks();
+  const { entries: markbookEntries } = useMarkbook();
+
+  const handleGlobalStudentSelect = useCallback((student: Student) => {
+    setGlobalSummaryStudent(student);
+  }, []);
 
   if (loading) {
     return (
@@ -43,8 +55,18 @@ export default function Dashboard() {
   };
 
   return (
-    <MainLayout activeTab={activeTab} onTabChange={setActiveTab}>
-      {renderTab()}
-    </MainLayout>
+    <>
+      <MainLayout activeTab={activeTab} onTabChange={setActiveTab} onSelectStudent={handleGlobalStudentSelect}>
+        {renderTab()}
+      </MainLayout>
+
+      <StudentSummaryPanel
+        student={globalSummaryStudent}
+        open={!!globalSummaryStudent}
+        onClose={() => setGlobalSummaryStudent(null)}
+        benchmarks={benchmarks}
+        markbookEntries={markbookEntries}
+      />
+    </>
   );
 }
