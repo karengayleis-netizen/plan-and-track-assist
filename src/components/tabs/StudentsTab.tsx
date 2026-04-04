@@ -291,12 +291,28 @@ export function StudentsTab() {
   const handleSaveEdit = async () => {
     if (!editingStudent) return;
     try {
-      await updateStudent(editingStudent.id, {
+      const updates: Partial<Student> = {
         isFocusStudent: editFocus,
         isHighNeed: editHighNeed,
         gender: editGender,
-      });
+      };
+
+      // Hash and validate OEN if entered
+      const rawOEN = editOen.trim();
+      if (rawOEN) {
+        const hashed = await hashOEN(rawOEN);
+        // Check for duplicate OEN hash among other students
+        const existing = students.find(s => s.oenHash === hashed && s.id !== editingStudent.id);
+        if (existing) {
+          toast.error('This OEN is already assigned to another student.');
+          return;
+        }
+        updates.oenHash = hashed;
+      }
+
+      await updateStudent(editingStudent.id, updates);
       toast.success('Student updated');
+      setEditOen('');
       setEditingStudent(null);
     } catch {
       toast.error('Failed to update student');
