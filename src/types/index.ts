@@ -54,6 +54,7 @@ export interface Benchmark {
   term: string;
   notes?: string;
   reference?: string;
+  lastUpdated?: Date;
   createdAt: Date;
   // Import wizard fields (all optional for backward compat)
   source?: string;
