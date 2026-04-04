@@ -36,6 +36,7 @@ export function StudentsTab() {
   const [isFocusStudent, setIsFocusStudent] = useState(false);
   const [isHighNeed, setIsHighNeed] = useState(false);
   const [selectedGender, setSelectedGender] = useState('');
+  const [oenInput, setOenInput] = useState('');
 
   // Get selected class details
   const selectedClass = classes.find(c => c.id === selectedClassId);
