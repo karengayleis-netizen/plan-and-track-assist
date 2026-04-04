@@ -138,6 +138,24 @@ export function MissingDataTab() {
                 </SelectContent>
               </Select>
             </div>
+            {(() => {
+              const allTags = [...new Set(students.flatMap(s => s.tags || []))].sort();
+              return allTags.length > 0 ? (
+                <div className="w-40">
+                  <Select value={filterTag} onValueChange={setFilterTag}>
+                    <SelectTrigger className="focus:ring-primary">
+                      <SelectValue placeholder="All Tags" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Tags</SelectItem>
+                      {allTags.map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null;
+            })()}
           </div>
         </CardContent>
       </Card>
