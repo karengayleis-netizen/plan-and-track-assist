@@ -1,3 +1,18 @@
+// Default student tags available across the system
+export const STUDENT_TAGS = [
+  'IEP',
+  'ELL',
+  'At Risk',
+  'Tier 2',
+  'Tier 3',
+  'Attendance Concern',
+  'Gifted',
+  'SEN',
+  'Pupil Premium',
+] as const;
+
+export type StudentTag = string;
+
 export interface Student {
   id: string;
   stableStudentId: string;
@@ -16,6 +31,7 @@ export interface Student {
   isFocusStudent: boolean;
   isHighNeed: boolean;
   gender?: string;
+  tags?: string[];
   lastUpdated?: Date;
 
   createdAt: Date;

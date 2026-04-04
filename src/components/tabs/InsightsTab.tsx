@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart, PieChart, Pie, Cell } from 'recharts';
-import { Users, AlertTriangle, Target, CheckCircle } from 'lucide-react';
+import { Users, AlertTriangle, Target, CheckCircle, Tag } from 'lucide-react';
 import { StatCard, InsightChart, chartColors, tooltipStyle, SectionHeader } from '@/components/dashboard';
 
 export function InsightsTab() {
@@ -51,6 +51,21 @@ export function InsightsTab() {
   })();
 
   const genderColors = [chartColors.primary, chartColors.destructive, chartColors.purple, chartColors.warning];
+
+  // Tag distribution
+  const tagData = (() => {
+    const counts: Record<string, number> = {};
+    students.forEach(s => {
+      (s.tags || []).forEach(tag => {
+        counts[tag] = (counts[tag] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  })();
+
+  const tagColors = [chartColors.primary, chartColors.success, chartColors.destructive, chartColors.purple, chartColors.warning, '#64748b', '#0ea5e9', '#f43f5e'];
 
   // Get selected student's benchmark trend
   const selectedStudentData = selectedStudent 
@@ -196,6 +211,33 @@ export function InsightsTab() {
           )}
         </InsightChart>
       </div>
+
+      {/* Tag Distribution */}
+      {tagData.length > 0 && (
+        <InsightChart title="Tag Distribution" description="Students by assigned tags">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={tagData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                axisLine={{ stroke: 'hsl(var(--border))' }}
+                tickLine={false}
+              />
+              <YAxis
+                dataKey="name"
+                type="category"
+                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                axisLine={false}
+                tickLine={false}
+                width={120}
+              />
+              <Tooltip {...tooltipStyle} />
+              <Bar dataKey="value" name="Students" fill={chartColors.primary} radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </InsightChart>
+      )}
 
       {/* Student Deep Dive */}
       <InsightChart 

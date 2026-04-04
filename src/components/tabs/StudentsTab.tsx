@@ -15,10 +15,12 @@ import { useAuth } from '@/hooks/useAuth';
 import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
-import { Student } from '@/types';
+import { Student, STUDENT_TAGS } from '@/types';
 import { freshnessLabel, isStale } from '@/lib/freshness';
 import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
 import { BulkActionsBar } from '@/components/students/BulkActionsBar';
+import { TagInput } from '@/components/ui/tag-input';
+import { Badge } from '@/components/ui/badge';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -30,12 +32,14 @@ export function StudentsTab() {
   const [editFocus, setEditFocus] = useState(false);
   const [editHighNeed, setEditHighNeed] = useState(false);
   const [editGender, setEditGender] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
   const { classes, loading: classesLoading, getClassByCode } = useClasses();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [filterTag, setFilterTag] = useState('all');
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
@@ -264,6 +268,7 @@ export function StudentsTab() {
     setEditFocus(student.isFocusStudent);
     setEditHighNeed(student.isHighNeed);
     setEditGender(student.gender || '');
+    setEditTags(student.tags || []);
   };
 
   const handleSaveEdit = async () => {
@@ -273,6 +278,7 @@ export function StudentsTab() {
         isFocusStudent: editFocus,
         isHighNeed: editHighNeed,
         gender: editGender,
+        tags: editTags,
       };
 
       await updateStudent(editingStudent.id, updates);
@@ -317,12 +323,17 @@ export function StudentsTab() {
     ? students.filter(s => s.homeroom === selectedClass.code)
     : students;
 
-  // Filter by search query
+  // Collect all unique tags for the filter dropdown
+  const allTags = [...new Set(students.flatMap(s => s.tags || []))].sort();
+
+  // Filter by search query and tag
   const filteredStudents = classStudents
-    .filter(s => 
-      s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.initials?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    .filter(s => {
+      const matchesSearch = s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.initials?.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesTag = filterTag === 'all' || (s.tags || []).includes(filterTag);
+      return matchesSearch && matchesTag;
+    })
     .sort((a, b) => {
       const homeA = a.homeroom || '';
       const homeB = b.homeroom || '';
@@ -553,7 +564,7 @@ export function StudentsTab() {
                 </span>
               )}
             </CardTitle>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
@@ -563,6 +574,19 @@ export function StudentsTab() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+              {allTags.length > 0 && (
+                <Select value={filterTag} onValueChange={setFilterTag}>
+                  <SelectTrigger className="w-36 focus:ring-primary">
+                    <SelectValue placeholder="All Tags" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Tags</SelectItem>
+                    {allTags.map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button variant="outline" size="sm" onClick={() => refetch()}>
                 <RefreshCw className="h-4 w-4 mr-1" />
                 Refresh
@@ -592,6 +616,7 @@ export function StudentsTab() {
                   <TableHead>Gender</TableHead>
                   <TableHead>Homeroom</TableHead>
                   <TableHead>Last Updated</TableHead>
+                  <TableHead>Tags</TableHead>
                   <TableHead>Flags</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
@@ -623,6 +648,15 @@ export function StudentsTab() {
                         </span>
                       </TableCell>
                       <TableCell>
+                        <div className="flex flex-wrap gap-1 max-w-[160px]">
+                          {(student.tags || []).map(tag => (
+                            <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex gap-1">
                           {student.isFocusStudent && (
                             <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Focus</span>
@@ -651,7 +685,7 @@ export function StudentsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       {selectedClass ? 'No students in this homeroom yet.' : 'No students added yet.'}
                     </TableCell>
                   </TableRow>
@@ -702,6 +736,12 @@ export function StudentsTab() {
                   onCheckedChange={(checked) => setEditHighNeed(checked as boolean)}
                 />
                 <Label htmlFor="editHighNeed" className="text-destructive text-sm font-medium">High Need</Label>
+              </div>
+            </div>
+            <div>
+              <Label>Tags</Label>
+              <div className="mt-1">
+                <TagInput value={editTags} onChange={setEditTags} />
               </div>
             </div>
           </div>

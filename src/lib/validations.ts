@@ -20,7 +20,7 @@ export const StudentSchema = z.object({
   isFocusStudent: z.boolean().default(false),
   isHighNeed: z.boolean().default(false),
   gender: z.string().max(10, 'Gender must be 10 characters or less').optional(),
-  
+  tags: z.array(z.string().max(30)).max(20, 'Too many tags').default([]),
 });
 
 export type ValidatedStudent = z.infer<typeof StudentSchema>;
