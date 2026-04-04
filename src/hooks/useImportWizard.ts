@@ -250,8 +250,14 @@ export function useImportWizard(onComplete?: () => void) {
     await loadTemplates();
   }, [user, state.source, state.columnMapping, loadTemplates]);
 
+  const errorSummary = useMemo(
+    () => buildErrorSummary(state.importRows, state.headers),
+    [state.importRows, state.headers]
+  );
+
   const downloadErrorReport = useCallback(() => {
-    const csv = generateErrorReportCSV(state.importRows);
+    const csv = generateErrorReportCSV(state.importRows, state.headers);
+    if (!csv) return;
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -259,7 +265,7 @@ export function useImportWizard(onComplete?: () => void) {
     a.download = `import_errors_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [state.importRows]);
+  }, [state.importRows, state.headers]);
 
   const reset = useCallback(() => {
     setState({
