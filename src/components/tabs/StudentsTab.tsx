@@ -22,7 +22,10 @@ import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
 export function StudentsTab() {
   const { user } = useAuth();
   const { students, loading, addStudent, updateStudent, deleteStudent, refetch } = useStudents();
+  const { benchmarks } = useBenchmarks();
+  const { entries: markbookEntries } = useMarkbook();
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [summaryStudent, setSummaryStudent] = useState<Student | null>(null);
   const [editFocus, setEditFocus] = useState(false);
   const [editHighNeed, setEditHighNeed] = useState(false);
   const [editGender, setEditGender] = useState('');
