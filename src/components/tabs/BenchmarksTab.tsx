@@ -14,8 +14,9 @@ import { ImportWizard } from '@/components/benchmarks/ImportWizard';
 
 export function BenchmarksTab() {
   const { students } = useStudents();
-  const { benchmarks, loading, addBenchmark } = useBenchmarks();
+  const { benchmarks, loading, addBenchmark, refetch } = useBenchmarks();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
   
   // Form state
   const [selectedStudent, setSelectedStudent] = useState('');
