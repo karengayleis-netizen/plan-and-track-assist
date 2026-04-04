@@ -52,6 +52,21 @@ export function InsightsTab() {
 
   const genderColors = [chartColors.primary, chartColors.destructive, chartColors.purple, chartColors.warning];
 
+  // Tag distribution
+  const tagData = (() => {
+    const counts: Record<string, number> = {};
+    students.forEach(s => {
+      (s.tags || []).forEach(tag => {
+        counts[tag] = (counts[tag] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  })();
+
+  const tagColors = [chartColors.primary, chartColors.success, chartColors.destructive, chartColors.purple, chartColors.warning, '#64748b', '#0ea5e9', '#f43f5e'];
+
   // Get selected student's benchmark trend
   const selectedStudentData = selectedStudent 
     ? benchmarks
