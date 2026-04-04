@@ -95,6 +95,7 @@ export interface User {
   displayName?: string;
   role: 'teacher' | 'admin';
   schoolId?: string;
+  assignedHomerooms?: string[];
 }
 
 export interface SchoolStats {

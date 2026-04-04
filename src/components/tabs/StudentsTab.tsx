@@ -9,12 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useStudents } from '@/hooks/useStudents';
 import { useClasses } from '@/hooks/useClasses';
+import { useAuth } from '@/hooks/useAuth';
 import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
 
 export function StudentsTab() {
+  const { user } = useAuth();
   const { students, loading, addStudent, updateStudent, deleteStudent, refetch } = useStudents();
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editFocus, setEditFocus] = useState(false);
@@ -270,7 +272,10 @@ export function StudentsTab() {
     }
   };
 
-  // Filter students by selected homeroom
+  const isAdmin = user?.role === 'admin';
+
+  // For teachers: only show students in their assigned homerooms (already filtered by useStudents)
+  // For admins: show all or filter by selected class
   const classStudents = selectedClass 
     ? students.filter(s => s.homeroom === selectedClass.code)
     : students;
@@ -504,7 +509,7 @@ export function StudentsTab() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>
-              {selectedClass ? `Students in ${selectedClass.code}` : 'All Students'}
+              {selectedClass ? `Students in ${selectedClass.code}` : (isAdmin ? 'All Students' : 'Select a homeroom')}
               {selectedClass && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">
                   ({filteredStudents.length} students)

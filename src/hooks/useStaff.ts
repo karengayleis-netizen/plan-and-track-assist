@@ -9,7 +9,9 @@ import {
   deleteDoc, 
   query, 
   where,
-  DocumentData 
+  DocumentData,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { StaffMember, CreateStaffInput, UpdateStaffInput } from '@/types/staff';
@@ -192,16 +194,22 @@ export function useStaff() {
       // Check if doc exists
       const existingDoc = await getDoc(docRef);
       const now = new Date();
+      const newHomerooms = input.assignedHomerooms || [];
+
+      // Get old homerooms for diff (to update teacherIds on homeroom docs)
+      const oldHomerooms: string[] = existingDoc.exists() 
+        ? (existingDoc.data()?.assignedHomerooms || []) 
+        : [];
 
       if (existingDoc.exists()) {
         // Update existing
-      await updateDoc(docRef, {
+        await updateDoc(docRef, {
           email: input.email.trim(),
           emailLower: input.email.trim().toLowerCase(),
           schoolId: schoolId,
           role: input.role || 'teacher',
           canWrite: input.canWrite ?? false,
-          assignedHomerooms: input.assignedHomerooms || [],
+          assignedHomerooms: newHomerooms,
           displayName: input.displayName?.trim() || null,
           updatedAt: now,
         });
@@ -213,11 +221,49 @@ export function useStaff() {
           schoolId: schoolId,
           role: input.role || 'teacher',
           canWrite: input.canWrite ?? false,
-          assignedHomerooms: input.assignedHomerooms || [],
+          assignedHomerooms: newHomerooms,
           displayName: input.displayName?.trim() || null,
           createdAt: now,
           updatedAt: now,
         });
+      }
+
+      // Sync assignedHomerooms to user_roles doc
+      const roleDocRef = doc(db, 'user_roles', input.uid.trim());
+      const roleDocSnap = await getDoc(roleDocRef);
+      if (roleDocSnap.exists()) {
+        await updateDoc(roleDocRef, { 
+          assignedHomerooms: newHomerooms,
+          role: input.role || 'teacher',
+          schoolId: schoolId,
+        });
+      } else {
+        await setDoc(roleDocRef, {
+          role: input.role || 'teacher',
+          schoolId: schoolId,
+          assignedHomerooms: newHomerooms,
+        });
+      }
+
+      // Sync teacherIds on homeroom docs
+      // Find all homeroom docs for this school to update teacherIds
+      const homeroomsQuery = query(
+        collection(db, 'homerooms'),
+        where('schoolId', '==', schoolId)
+      );
+      const homeroomsSnap = await getDocs(homeroomsQuery);
+      
+      for (const homeroomDoc of homeroomsSnap.docs) {
+        const homeroomCode = homeroomDoc.data().code;
+        const homeroomRef = doc(db, 'homerooms', homeroomDoc.id);
+        
+        if (newHomerooms.includes(homeroomCode) && !oldHomerooms.includes(homeroomCode)) {
+          // Add teacher to this homeroom
+          await updateDoc(homeroomRef, { teacherIds: arrayUnion(input.uid.trim()) });
+        } else if (!newHomerooms.includes(homeroomCode) && oldHomerooms.includes(homeroomCode)) {
+          // Remove teacher from this homeroom
+          await updateDoc(homeroomRef, { teacherIds: arrayRemove(input.uid.trim()) });
+        }
       }
 
       // Refresh the list

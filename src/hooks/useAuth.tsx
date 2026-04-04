@@ -21,7 +21,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Fetch user role from Firestore user_roles collection (separate from user profile for security)
-async function fetchUserRole(uid: string): Promise<'teacher' | 'admin'> {
+async function fetchUserRoleAndHomerooms(uid: string): Promise<{ role: 'teacher' | 'admin'; assignedHomerooms: string[] }> {
   try {
     console.log('[Auth Debug] Fetching role for UID:', uid);
     const roleDocRef = doc(db, 'user_roles', uid);
@@ -34,17 +34,17 @@ async function fetchUserRole(uid: string): Promise<'teacher' | 'admin'> {
       const data = roleDoc.data();
       console.log('[Auth Debug] Role document data:', data);
       const role = data?.role;
-      console.log('[Auth Debug] Raw role value:', role, 'type:', typeof role);
+      const assignedHomerooms = data?.assignedHomerooms || [];
+      console.log('[Auth Debug] Raw role value:', role, 'assignedHomerooms:', assignedHomerooms);
       if (role === 'admin' || role === 'teacher') {
-        console.log('[Auth Debug] Returning role:', role);
-        return role;
+        return { role, assignedHomerooms };
       }
     }
     console.log('[Auth Debug] No valid role found, defaulting to teacher');
-    return 'teacher';
+    return { role: 'teacher', assignedHomerooms: [] };
   } catch (error) {
     console.error('[Auth Debug] Error fetching role:', error);
-    return 'teacher';
+    return { role: 'teacher', assignedHomerooms: [] };
   }
 }
 
@@ -92,36 +92,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log('[Auth Debug] Token claims:', { role: claimRole, schoolId: claimSchoolId });
 
             // Use claims if available, otherwise fall back to Firestore
-            const [role, schoolId] = await Promise.all([
+            const [roleData, schoolId] = await Promise.all([
               (claimRole === 'admin' || claimRole === 'teacher'
-                ? Promise.resolve(claimRole as 'admin' | 'teacher')
-                : fetchUserRole(firebaseUser.uid)),
+                ? Promise.resolve({ role: claimRole as 'admin' | 'teacher', assignedHomerooms: [] as string[] })
+                : fetchUserRoleAndHomerooms(firebaseUser.uid)),
               claimSchoolId
                 ? Promise.resolve(claimSchoolId)
                 : fetchUserSchoolId(firebaseUser.uid),
             ]);
 
-            console.log('[Auth Debug] Final user state:', { uid: firebaseUser.uid, role, schoolId });
+            // If we got role from claims, still fetch assignedHomerooms from Firestore
+            let assignedHomerooms = roleData.assignedHomerooms;
+            if ((claimRole === 'admin' || claimRole === 'teacher') && assignedHomerooms.length === 0) {
+              const firestoreData = await fetchUserRoleAndHomerooms(firebaseUser.uid);
+              assignedHomerooms = firestoreData.assignedHomerooms;
+            }
+
+            console.log('[Auth Debug] Final user state:', { uid: firebaseUser.uid, role: roleData.role, schoolId, assignedHomerooms });
 
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || undefined,
-              role,
+              role: roleData.role,
               schoolId,
+              assignedHomerooms,
             });
           } catch (err) {
             console.error('[Auth Debug] Token refresh failed, falling back to Firestore:', err);
-            const [role, schoolId] = await Promise.all([
-              fetchUserRole(firebaseUser.uid),
+            const [roleData, schoolId] = await Promise.all([
+              fetchUserRoleAndHomerooms(firebaseUser.uid),
               fetchUserSchoolId(firebaseUser.uid),
             ]);
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || undefined,
-              role,
+              role: roleData.role,
               schoolId,
+              assignedHomerooms: roleData.assignedHomerooms,
             });
           } finally {
             setLoading(false);

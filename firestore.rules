@@ -91,9 +91,12 @@ service cloud.firestore {
       allow delete: if isAdmin() && resourceSameSchool();
     }
 
-    // STUDENTS
+    // STUDENTS — teachers only see students in their assigned homerooms
     match /students/{id} {
-      allow read: if resourceSameSchool();
+      allow read: if isAdmin() && resourceSameSchool()
+        || (hasSchool() && resourceSameSchool()
+            && 'assignedHomerooms' in roleDoc().data
+            && resource.data.homeroom in roleDoc().data.assignedHomerooms);
       allow create: if requestSameSchool();
       allow update: if resourceSameSchool() && requestSameSchool();
       allow delete: if resourceSameSchool();

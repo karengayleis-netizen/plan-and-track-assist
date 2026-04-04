@@ -53,6 +53,7 @@ export function useClasses() {
           code: data.code,
           name: data.name,
           allowedGrades: data.allowedGrades || [],
+          teacherIds: data.teacherIds || [],
           schoolId: data.schoolId,
           createdBy: data.createdBy,
           createdAt: data.createdAt?.toDate(),
@@ -63,7 +64,12 @@ export function useClasses() {
       // Sort by code alphabetically
       classesData.sort((a, b) => a.code.localeCompare(b.code));
       
-      setClasses(classesData);
+      // For teachers: only show assigned homerooms
+      const filteredClasses = role === 'admin' 
+        ? classesData 
+        : classesData.filter(c => c.teacherIds?.includes(user?.uid || ''));
+      
+      setClasses(filteredClasses);
       setError(null);
     } catch (err) {
       console.error('Failed to fetch classes:', err);
