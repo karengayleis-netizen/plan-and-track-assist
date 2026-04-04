@@ -21,6 +21,7 @@ export function MissingDataTab() {
   const [filterClass, setFilterClass] = useState('all');
   const [filterGrade, setFilterGrade] = useState('all');
   const [filterSubject, setFilterSubject] = useState('all');
+  const [filterTag, setFilterTag] = useState('all');
 
   const loading = studentsLoading || benchmarksLoading || markbookLoading;
 
