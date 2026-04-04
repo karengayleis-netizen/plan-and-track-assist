@@ -278,6 +278,7 @@ export function StudentsTab() {
         isFocusStudent: editFocus,
         isHighNeed: editHighNeed,
         gender: editGender,
+        tags: editTags,
       };
 
       await updateStudent(editingStudent.id, updates);
