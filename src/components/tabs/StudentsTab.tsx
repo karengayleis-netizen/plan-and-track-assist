@@ -18,6 +18,7 @@ import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
 import { freshnessLabel, isStale } from '@/lib/freshness';
 import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
+import { BulkActionsBar } from '@/components/students/BulkActionsBar';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -34,6 +35,7 @@ export function StudentsTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
@@ -283,6 +285,32 @@ export function StudentsTab() {
 
   const isAdmin = user?.role === 'admin';
 
+  // Selection helpers
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredStudents.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredStudents.map(s => s.id)));
+    }
+  };
+
+  const bulkUpdateStudents = async (ids: string[], updates: Partial<Student>) => {
+    for (const id of ids) {
+      await updateStudent(id, updates);
+    }
+    await refetch();
+    setSelectedIds(new Set());
+  };
+
   // For teachers: only show students in their assigned homerooms (already filtered by useStudents)
   // For admins: show all or filter by selected class
   const classStudents = selectedClass 
@@ -304,6 +332,8 @@ export function StudentsTab() {
       const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
       return numA - numB;
     });
+
+  const selectedStudents = filteredStudents.filter(s => selectedIds.has(s.id));
 
   return (
     <div className="space-y-6">
@@ -550,6 +580,12 @@ export function StudentsTab() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filteredStudents.length > 0 && selectedIds.size === filteredStudents.length}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Student #</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Grade</TableHead>
@@ -563,7 +599,19 @@ export function StudentsTab() {
               <TableBody>
                 {filteredStudents.length > 0 ? (
                   filteredStudents.map(student => (
-                    <TableRow key={student.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSummaryStudent(student)}>
+                    <TableRow key={student.id} className={`hover:bg-muted/30 cursor-pointer ${selectedIds.has(student.id) ? 'bg-primary/5' : ''}`} onClick={() => setSummaryStudent(student)}>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(student.id)}
+                          onCheckedChange={() => {
+                            setSelectedIds(prev => {
+                              const next = new Set(prev);
+                              next.has(student.id) ? next.delete(student.id) : next.add(student.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
@@ -603,7 +651,7 @@ export function StudentsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       {selectedClass ? 'No students in this homeroom yet.' : 'No students added yet.'}
                     </TableCell>
                   </TableRow>
@@ -671,6 +719,15 @@ export function StudentsTab() {
         onClose={() => setSummaryStudent(null)}
         benchmarks={benchmarks}
         markbookEntries={markbookEntries}
+      />
+
+      {/* Bulk Actions */}
+      <BulkActionsBar
+        selectedStudents={selectedStudents}
+        onClearSelection={() => setSelectedIds(new Set())}
+        onUpdateStudents={bulkUpdateStudents}
+        onRefetch={refetch}
+        homerooms={classes.map(c => ({ id: c.id, code: c.code, name: c.name }))}
       />
     </div>
   );
