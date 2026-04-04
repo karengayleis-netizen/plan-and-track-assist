@@ -563,7 +563,7 @@ export function StudentsTab() {
               <TableBody>
                 {filteredStudents.length > 0 ? (
                   filteredStudents.map(student => (
-                    <TableRow key={student.id} className="hover:bg-muted/30">
+                    <TableRow key={student.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSummaryStudent(student)}>
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
