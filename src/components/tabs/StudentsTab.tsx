@@ -323,12 +323,17 @@ export function StudentsTab() {
     ? students.filter(s => s.homeroom === selectedClass.code)
     : students;
 
-  // Filter by search query
+  // Collect all unique tags for the filter dropdown
+  const allTags = [...new Set(students.flatMap(s => s.tags || []))].sort();
+
+  // Filter by search query and tag
   const filteredStudents = classStudents
-    .filter(s => 
-      s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.initials?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    .filter(s => {
+      const matchesSearch = s.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.initials?.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesTag = filterTag === 'all' || (s.tags || []).includes(filterTag);
+      return matchesSearch && matchesTag;
+    })
     .sort((a, b) => {
       const homeA = a.homeroom || '';
       const homeB = b.homeroom || '';
