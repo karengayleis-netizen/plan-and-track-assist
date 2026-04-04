@@ -5,7 +5,8 @@ import {
   LineChart, 
   Triangle, 
   FileText, 
-  Settings 
+  Settings,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -16,6 +17,7 @@ const allTabs = [
   { id: 'markbook', label: 'Markbook', icon: BookOpen, requiresAdmin: false },
   { id: 'insights', label: 'Insights', icon: LineChart, requiresAdmin: false },
   { id: 'triangulation', label: 'Triangulation', icon: Triangle, requiresAdmin: false },
+  { id: 'missing-data', label: 'Missing Data', icon: AlertTriangle, requiresAdmin: false },
   { id: 'support-plan', label: 'Support Plan', icon: FileText, requiresAdmin: false },
   { id: 'admin', label: 'Admin', icon: Settings, requiresAdmin: true },
 ];
