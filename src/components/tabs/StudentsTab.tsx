@@ -564,7 +564,7 @@ export function StudentsTab() {
                 </span>
               )}
             </CardTitle>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
@@ -574,6 +574,19 @@ export function StudentsTab() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+              {allTags.length > 0 && (
+                <Select value={filterTag} onValueChange={setFilterTag}>
+                  <SelectTrigger className="w-36 focus:ring-primary">
+                    <SelectValue placeholder="All Tags" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Tags</SelectItem>
+                    {allTags.map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button variant="outline" size="sm" onClick={() => refetch()}>
                 <RefreshCw className="h-4 w-4 mr-1" />
                 Refresh
