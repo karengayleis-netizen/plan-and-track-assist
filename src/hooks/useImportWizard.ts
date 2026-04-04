@@ -3,7 +3,6 @@ import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './useAuth';
 import { useStudents } from './useStudents';
-import { hashOEN } from '@/lib/oenHash';
 import { parseCSV, detectColumnMapping, buildImportRows, generateErrorReportCSV } from '@/lib/csvParser';
 import { getPreset } from '@/lib/importPresets';
 import type {
@@ -60,12 +59,12 @@ export function useImportWizard(onComplete?: () => void) {
 
   const setStep = (step: WizardStep) => setState(s => ({ ...s, step }));
 
-  // Step 1 ─────────────────────────────────────────────────────────────────────
+  // Step 1
   const selectSource = useCallback((source: ImportSource) => {
     setState(s => ({ ...s, source, step: WS.UploadCSV }));
   }, []);
 
-  // Step 2 ─────────────────────────────────────────────────────────────────────
+  // Step 2
   const uploadFile = useCallback((file: File) => {
     file.text().then(text => {
       const { headers, rows } = parseCSV(text);
@@ -82,7 +81,7 @@ export function useImportWizard(onComplete?: () => void) {
     });
   }, [state.source]);
 
-  // Step 3 ─────────────────────────────────────────────────────────────────────
+  // Step 3
   const updateMapping = useCallback((field: InternalField, colIndex: number) => {
     setState(s => ({
       ...s,
@@ -90,49 +89,40 @@ export function useImportWizard(onComplete?: () => void) {
     }));
   }, []);
 
-  const confirmMapping = useCallback(async () => {
-    // Build rows + match students
+  const confirmMapping = useCallback(() => {
+    // Build rows + match students by studentNumber
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
-    // Match students by OEN hash first, then studentNumber fallback
-    const matched = await Promise.all(
-      rows.map(async (row) => {
-        const identifierIdx = state.columnMapping.studentIdentifier;
-        const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx]?.trim() : '';
+    const matched = rows.map((row) => {
+      const identifierIdx = state.columnMapping.studentIdentifier;
+      const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx]?.trim() : '';
 
-        if (!rawIdentifier) return row;
+      if (!rawIdentifier) return row;
 
-        // Try OEN hash match
-        const hashed = await hashOEN(rawIdentifier);
-        let student = hashed ? students.find(s => s.oenHash === hashed) : undefined;
+      // Match by studentNumber
+      const student = students.find(s => s.studentNumber === rawIdentifier);
 
-        // Fallback: coded studentNumber
-        if (!student) {
-          student = students.find(s => s.studentNumber === rawIdentifier);
-        }
-
-        if (student) {
-          return {
-            ...row,
-            matchedStudentId: student.id,
-            matchedStudentNumber: student.studentNumber,
-            matchedStudentInitials: student.initials || `${student.firstName?.[0] || ''}${student.lastName?.[0] || ''}`,
-            status: row.status === 'error' ? 'error' as const : row.status,
-          };
-        }
-
+      if (student) {
         return {
           ...row,
-          status: row.errors.length > 0 ? 'error' as const : 'warning' as const,
-          warnings: [...row.warnings, 'No student match found'],
+          matchedStudentId: student.id,
+          matchedStudentNumber: student.studentNumber,
+          matchedStudentInitials: student.initials || `${student.firstName?.[0] || ''}${student.lastName?.[0] || ''}`,
+          status: row.status === 'error' ? 'error' as const : row.status,
         };
-      })
-    );
+      }
+
+      return {
+        ...row,
+        status: row.errors.length > 0 ? 'error' as const : 'warning' as const,
+        warnings: [...row.warnings, 'No student match found'],
+      };
+    });
 
     setState(s => ({ ...s, importRows: matched, step: WS.PreviewValidate }));
   }, [state.rawRows, state.columnMapping, students]);
 
-  // Step 4 → 5 Import ─────────────────────────────────────────────────────────
+  // Step 4 → 5 Import
   const runImport = useCallback(async () => {
     if (!user || !state.source) return;
 
@@ -143,7 +133,6 @@ export function useImportWizard(onComplete?: () => void) {
     let importedCount = 0;
     let errorCount = 0;
 
-    // Build column name map for metadata (no raw OEN)
     const columnNameMap: Record<string, string> = {};
     for (const [field, idx] of Object.entries(state.columnMapping)) {
       if (idx >= 0 && idx < state.headers.length) {
@@ -206,7 +195,6 @@ export function useImportWizard(onComplete?: () => void) {
       errorRows: errorCount,
     };
 
-    // Save import run for audit
     try {
       await addDoc(collection(db, 'benchmark_import_runs'), {
         schoolId: user.schoolId || '',
@@ -227,7 +215,7 @@ export function useImportWizard(onComplete?: () => void) {
     onComplete?.();
   }, [user, state.source, state.importRows, state.columnMapping, state.headers, state.fileName, onComplete]);
 
-  // Step 6: Templates ─────────────────────────────────────────────────────────
+  // Step 6: Templates
   const loadTemplates = useCallback(async () => {
     if (!user?.schoolId || !state.source) return;
     try {

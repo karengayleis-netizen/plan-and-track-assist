@@ -78,16 +78,10 @@ export function BenchmarksTab() {
 
       const [identifier, type, scoreVal, dateVal, notesVal, refVal] = cols;
       
-      // Try matching by OEN hash first, then fall back to coded studentNumber
+      // Match by studentNumber
       let student = null;
       if (identifier) {
-        const hashedOEN = await hashOEN(identifier);
-        student = students.find(s => s.oenHash && s.oenHash === hashedOEN);
-        
-        // Fallback: match by coded student number for backward compatibility
-        if (!student) {
-          student = students.find(s => s.studentNumber === identifier);
-        }
+        student = students.find(s => s.studentNumber === identifier.trim());
       }
       
       if (!student) { errorCount++; continue; }
