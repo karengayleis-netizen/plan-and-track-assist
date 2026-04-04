@@ -685,6 +685,22 @@ export function StudentsTab() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="editOen">OEN (optional — used only for CSV matching)</Label>
+              <Input
+                id="editOen"
+                placeholder="Enter OEN"
+                value={editOen}
+                onChange={(e) => setEditOen(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Will be hashed for privacy. Raw OEN is never stored.
+              </p>
+              {editingStudent?.oenHash && (
+                <p className="text-xs text-primary mt-1">✓ OEN hash already on file</p>
+              )}
+            </div>
             <div className="flex gap-4">
               <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1 border border-primary/20">
                 <Checkbox
