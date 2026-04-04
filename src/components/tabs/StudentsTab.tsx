@@ -738,6 +738,12 @@ export function StudentsTab() {
                 <Label htmlFor="editHighNeed" className="text-destructive text-sm font-medium">High Need</Label>
               </div>
             </div>
+            <div>
+              <Label>Tags</Label>
+              <div className="mt-1">
+                <TagInput value={editTags} onChange={setEditTags} />
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingStudent(null)}>Cancel</Button>
