@@ -15,7 +15,7 @@ const presets: Record<ImportSource, SourcePreset> = {
     description: 'Import Acadience / CBMReading benchmark data. Default family: Reading.',
     assessmentFamily: 'reading',
     suggestedHeaders: {
-      studentIdentifier: ['OEN', 'Student ID'],
+      studentIdentifier: ['Student Number', 'Student ID', 'Number'],
       assessmentType: ['Measure', 'Type'],
       score: ['Score', 'Composite'],
       date: ['Date', 'Assessment Date'],
@@ -31,7 +31,7 @@ const presets: Record<ImportSource, SourcePreset> = {
     description: 'Import DIBELS literacy screening data. Default family: Reading.',
     assessmentFamily: 'reading',
     suggestedHeaders: {
-      studentIdentifier: ['OEN', 'Student ID'],
+      studentIdentifier: ['Student Number', 'Student ID', 'Number'],
       assessmentType: ['Measure', 'Subtest'],
       score: ['Score', 'Composite'],
       date: ['Date', 'Assessment Date'],
@@ -44,7 +44,7 @@ const presets: Record<ImportSource, SourcePreset> = {
     description: 'Import Knowledgehook math mission / assessment data. Default family: Math.',
     assessmentFamily: 'math',
     suggestedHeaders: {
-      studentIdentifier: ['OEN', 'Student ID'],
+      studentIdentifier: ['Student Number', 'Student ID', 'Number'],
       assessmentType: ['Assessment', 'Assignment'],
       score: ['Score', 'Percent'],
       date: ['Date', 'Completed On'],

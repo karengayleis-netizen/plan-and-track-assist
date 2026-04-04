@@ -18,7 +18,7 @@ export const StudentSchema = z.object({
   isFocusStudent: z.boolean().default(false),
   isHighNeed: z.boolean().default(false),
   gender: z.string().max(10, 'Gender must be 10 characters or less').optional(),
-  oenHash: z.string().max(128, 'OEN hash must be 128 characters or less').optional(),
+  
 });
 
 export type ValidatedStudent = z.infer<typeof StudentSchema>;
