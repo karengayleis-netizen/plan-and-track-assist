@@ -35,6 +35,7 @@ export function useStudents() {
           ...data,
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
+          lastUpdated: data.lastUpdated?.toDate() || data.updatedAt?.toDate(),
         } as Student;
       });
 
