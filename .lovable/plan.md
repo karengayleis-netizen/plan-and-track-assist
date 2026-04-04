@@ -1,62 +1,86 @@
 
 
-## Fix: Teacher Can't See Classes (Ruchi Bhardwaj)
+## Why Ruchi Sees All Students
 
-### Root Causes
+The problem has two layers:
 
-1. **Missing `user_roles` document in Firestore** — Ruchi's UID (`I9RDwJ3ADmYaOyo0eRaxWtz9yok1`) has no entry in the `user_roles` collection. The Firestore security rules rely on this document to authorize all reads (students, homerooms, etc.). Without it, every query is denied.
+1. **Firestore `students` rules** allow **any** user with matching `schoolId` to read all students — there's no teacher-level filtering.
+2. **`useStudents` hook** queries all students by `schoolId` with no homeroom restriction for teachers.
+3. There is **no teacher-to-homeroom assignment** in the data model yet — the `Homeroom` type has no `teacherId` field, so there's nothing to filter on.
 
-2. **`useClasses` hook blocks non-admin users** — The hook has a guard that returns empty if `role !== 'admin'`, so teachers never load the homeroom list even if Firestore would allow it.
+The previous change (opening homerooms list to teachers) was correct in intent — teachers do need to see their classes. But the student data itself was never restricted by homeroom assignment.
 
-### Required Actions
+## Proposed Fix
 
-**Action 1: Create the missing Firestore document (manual, in Firebase Console)**
+### 1. Add teacher assignment to homerooms
 
-Go to Firebase Console → Firestore → `user_roles` collection → Add document with ID `I9RDwJ3ADmYaOyo0eRaxWtz9yok1`:
-- `role`: `"teacher"`
-- `schoolId`: `"folkstone_ps"`
+**Firestore data**: Add a `teacherIds: string[]` field to each homeroom document (array to support co-teaching). Admins assign teachers to homerooms via the Admin tab.
 
-This must be done for every teacher account — it's how the security rules authorize access.
+**Type update (`src/types/homeroom.ts`)**: Add `teacherIds?: string[]` to the `Homeroom` interface.
 
-**Action 2: Update `useClasses` to allow teachers to fetch homerooms**
+### 2. Restrict `useStudents` for teachers
 
-**File: `src/hooks/useClasses.ts`** (~line 27)
+**File: `src/hooks/useStudents.ts`**
 
-Change the guard from requiring `admin` to just requiring a valid `schoolId`. Teachers need to see the class list to filter students by homeroom. The Firestore rules already enforce school-level isolation, so this is safe.
+- Accept an optional `allowedHomerooms` parameter (or derive from auth context)
+- For teachers: after fetching students, filter client-side to only include students whose `homeroom` field matches one of the teacher's assigned homerooms
+- For admins: no filtering (see all)
 
-```typescript
-// Before:
-if (!user?.uid || !user?.schoolId || role !== 'admin') {
+### 3. Restrict `useClasses` for teachers
 
-// After:
-if (!user?.uid || !user?.schoolId) {
-```
+**File: `src/hooks/useClasses.ts`**
 
-Also update the `useEffect` trigger (~line 138) to remove the admin check:
-```typescript
-// Before:
-if (user?.schoolId && role === 'admin') {
+- After fetching all homerooms for the school, filter client-side for teachers: only return homerooms where `teacherIds` includes `user.uid`
+- Admins continue to see all homerooms
 
-// After:
-if (user?.schoolId) {
-```
+### 4. Update Firestore rules
 
-Note: Write operations (add/update/delete class) are already protected by Firestore rules that require admin role, so removing the read guard doesn't create a security issue.
+**File: `firestore.rules`**
 
-**Action 3: Update Firestore security rules for teacher homeroom reads**
-
-Currently `homerooms` rules only allow admin access. Teachers need read access to see the class dropdown:
+Revert `homerooms` list rule to admin-only. Add a `get` rule allowing teachers to read homerooms where they're assigned:
 
 ```
 match /homerooms/{homeroomId} {
-  allow list: if hasSchool();                    // was: isAdmin() && hasSchool()
-  allow get: if hasSchool() && (resourceSameSchool() || isMissingSchoolId());  // was: isAdmin() && ...
-  // create/update/delete remain admin-only (unchanged)
+  allow list: if isAdmin() && hasSchool();
+  allow get: if hasSchool() && (resourceSameSchool() || resource.data.teacherIds.hasAny([request.auth.uid]));
+  // create/update/delete remain admin-only
 }
 ```
 
-### Summary
-- One manual Firestore document creation (and for any future teachers)
-- Two small code changes in `useClasses.ts`
-- One Firestore rules update for teacher read access to homerooms
+For `students`, add teacher restriction:
+```
+match /students/{id} {
+  allow read: if isAdmin() && resourceSameSchool();
+  // Teachers: handled by querying only their homerooms' students client-side,
+  // but rules should also enforce it — requires knowing teacher's homerooms
+}
+```
+
+**Note**: Firestore rules can't easily do a join (look up which homerooms a teacher belongs to, then check the student's homeroom). The practical approach is:
+- Store the teacher's assigned homeroom codes on the `user_roles` document (e.g., `assignedHomerooms: ["2AF", "45E"]`)
+- Then the student read rule becomes: `resource.data.homeroom in roleDoc().data.assignedHomerooms`
+
+### 5. Add teacher-homeroom assignment UI in Admin tab
+
+**File: `src/components/tabs/AdminTab.tsx`**
+
+Add a section where admins can assign teachers to homerooms (multi-select). This writes `teacherIds` to the homeroom doc and `assignedHomerooms` to the teacher's `user_roles` doc (keeping both in sync).
+
+### 6. Immediate short-term fix (while building the above)
+
+Until teacher assignments exist, filter students client-side by requiring teachers to select a homeroom before seeing any students — don't show "All" to non-admin users.
+
+**File: `src/components/tabs/StudentsTab.tsx`**: Hide the "All Students" option from the class dropdown for teachers. Teachers must pick a specific class.
+
+## Summary of files to change
+
+| File | Change |
+|------|--------|
+| `src/types/homeroom.ts` | Add `teacherIds` field |
+| `src/hooks/useAuth.tsx` | Fetch `assignedHomerooms` from `user_roles` doc |
+| `src/hooks/useStudents.ts` | Filter by assigned homerooms for teachers |
+| `src/hooks/useClasses.ts` | Filter homerooms by teacher assignment |
+| `src/components/tabs/StudentsTab.tsx` | Hide "All" option for teachers |
+| `src/components/tabs/AdminTab.tsx` | Add teacher-homeroom assignment UI |
+| `firestore.rules` | Restrict student reads by homeroom assignment |
 
