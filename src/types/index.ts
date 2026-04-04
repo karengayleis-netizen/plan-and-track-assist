@@ -1,5 +1,6 @@
 export interface Student {
   id: string;
+  stableStudentId: string;
   studentNumber: string;
   initials: string;
   firstName: string;

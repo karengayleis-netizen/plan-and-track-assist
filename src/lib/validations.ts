@@ -3,6 +3,8 @@ import { GRADES, SUBJECTS, ASSESSMENT_TYPES } from '@/types';
 
 // Student validation schema
 export const StudentSchema = z.object({
+  stableStudentId: z.string().min(1, 'Stable student ID is required').max(50, 'Stable student ID must be 50 characters or less')
+    .transform(v => v.trim()),
   studentNumber: z.string().min(1, 'Student number is required').max(20, 'Student number must be 20 characters or less'),
   initials: z.string().max(10, 'Initials must be 10 characters or less').default(''),
   firstName: z.string().max(50, 'First name must be 50 characters or less').default(''),
