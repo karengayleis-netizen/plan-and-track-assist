@@ -221,6 +221,19 @@ export function StudentsTab() {
       return;
     }
 
+    // Hash OEN if provided (never store raw)
+    let oenHash: string | undefined;
+    const rawOEN = oenInput.trim();
+    if (rawOEN) {
+      oenHash = await hashOEN(rawOEN);
+      // Check for duplicate OEN hash
+      const existing = students.find(s => s.oenHash === oenHash);
+      if (existing) {
+        toast.error('This OEN is already assigned to another student.');
+        return;
+      }
+    }
+
     const codedStudentNumber = `${selectedClass.code}-${studentNumber.trim()}`;
     
     try {
@@ -239,15 +252,17 @@ export function StudentsTab() {
         isFocusStudent,
         isHighNeed,
         gender: selectedGender || '',
+        oenHash,
       });
       toast.success('Student saved successfully');
-      // Reset form
+      // Reset form (raw OEN is cleared — never persisted in state)
       setStudentNumber('');
       setInitials('');
       setSelectedGrade('');
       setIsFocusStudent(false);
       setIsHighNeed(false);
       setSelectedGender('');
+      setOenInput('');
     } catch (err) {
       toast.error('Failed to save student');
     }
