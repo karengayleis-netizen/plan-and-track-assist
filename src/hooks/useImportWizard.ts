@@ -284,6 +284,7 @@ export function useImportWizard(onComplete?: () => void) {
 
   return {
     state,
+    errorSummary,
     setStep,
     selectSource,
     uploadFile,

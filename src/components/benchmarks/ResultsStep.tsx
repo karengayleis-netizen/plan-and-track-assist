@@ -1,16 +1,20 @@
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ImportResult, ImportRow } from '@/types/importWizard';
-import { CheckCircle2, AlertTriangle, Download, Save } from 'lucide-react';
+import type { ErrorSummary } from '@/lib/csvParser';
+import { CheckCircle2, AlertTriangle, Download, Save, FileWarning, XCircle } from 'lucide-react';
 
 interface ResultsStepProps {
   result: ImportResult;
   rows: ImportRow[];
+  errorSummary: ErrorSummary;
   onDownloadErrors: () => void;
   onSaveTemplate: () => void;
   onClose: () => void;
 }
 
-export function ResultsStep({ result, rows, onDownloadErrors, onSaveTemplate, onClose }: ResultsStepProps) {
+export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSaveTemplate, onClose }: ResultsStepProps) {
   const hasErrors = result.skippedRows > 0 || result.unmatchedRows > 0;
 
   return (
@@ -40,11 +44,63 @@ export function ResultsStep({ result, rows, onDownloadErrors, onSaveTemplate, on
         ))}
       </div>
 
+      {/* Error Reason Breakdown */}
+      {hasErrors && errorSummary.reasons.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium flex items-center gap-1.5">
+            <FileWarning className="h-4 w-4 text-yellow-500" />
+            Why rows failed
+          </h4>
+          <div className="space-y-1.5">
+            {errorSummary.reasons.map(({ reason, count }) => (
+              <div key={reason} className="flex items-center justify-between px-3 py-2 rounded-md bg-muted/40 text-sm">
+                <span className="text-muted-foreground">{reason}</span>
+                <Badge variant="secondary" className="text-xs ml-2 shrink-0">{count} row{count !== 1 ? 's' : ''}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Failed Rows Preview */}
+      {hasErrors && errorSummary.failedRows.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium flex items-center gap-1.5">
+            <XCircle className="h-4 w-4 text-destructive" />
+            Failed rows ({errorSummary.failedRows.length})
+          </h4>
+          <ScrollArea className="h-[160px] rounded-md border border-border">
+            <div className="divide-y divide-border">
+              {errorSummary.failedRows.slice(0, 50).map((row) => (
+                <div key={row.rowNumber} className="px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant={row.status === 'error' ? 'destructive' : 'secondary'} className="text-[10px] px-1.5 py-0">
+                      Row {row.rowNumber}
+                    </Badge>
+                    <span className="text-muted-foreground truncate">
+                      {row.reasons.join(' · ')}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground/70 truncate">
+                    {Object.entries(row.originalValues).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                  </p>
+                </div>
+              ))}
+              {errorSummary.failedRows.length > 50 && (
+                <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                  + {errorSummary.failedRows.length - 50} more — download CSV for full list
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         {hasErrors && (
           <Button variant="outline" className="w-full" onClick={onDownloadErrors}>
             <Download className="h-4 w-4 mr-2" />
-            Download Error Report
+            Download Error Report (.csv)
           </Button>
         )}
         <Button variant="outline" className="w-full" onClick={onSaveTemplate}>
