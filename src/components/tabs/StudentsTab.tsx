@@ -9,17 +9,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useStudents } from '@/hooks/useStudents';
 import { useClasses } from '@/hooks/useClasses';
+import { useBenchmarks } from '@/hooks/useBenchmarks';
+import { useMarkbook } from '@/hooks/useMarkbook';
 import { useAuth } from '@/hooks/useAuth';
 import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
 import { freshnessLabel, isStale } from '@/lib/freshness';
+import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
 
 export function StudentsTab() {
   const { user } = useAuth();
   const { students, loading, addStudent, updateStudent, deleteStudent, refetch } = useStudents();
+  const { benchmarks } = useBenchmarks();
+  const { entries: markbookEntries } = useMarkbook();
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [summaryStudent, setSummaryStudent] = useState<Student | null>(null);
   const [editFocus, setEditFocus] = useState(false);
   const [editHighNeed, setEditHighNeed] = useState(false);
   const [editGender, setEditGender] = useState('');
@@ -557,7 +563,7 @@ export function StudentsTab() {
               <TableBody>
                 {filteredStudents.length > 0 ? (
                   filteredStudents.map(student => (
-                    <TableRow key={student.id} className="hover:bg-muted/30">
+                    <TableRow key={student.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSummaryStudent(student)}>
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
@@ -657,6 +663,15 @@ export function StudentsTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Student Summary Panel */}
+      <StudentSummaryPanel
+        student={summaryStudent}
+        open={!!summaryStudent}
+        onClose={() => setSummaryStudent(null)}
+        benchmarks={benchmarks}
+        markbookEntries={markbookEntries}
+      />
     </div>
   );
 }
