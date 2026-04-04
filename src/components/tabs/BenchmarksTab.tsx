@@ -67,7 +67,7 @@ export function BenchmarksTab() {
 
     // Skip header if it looks like one
     const headerLower = lines[0]?.toLowerCase() || '';
-    const startIdx = headerLower.includes('oen') || headerLower.includes('studentnumber') || headerLower.includes('type') ? 1 : 0;
+    const startIdx = headerLower.includes('studentnumber') || headerLower.includes('student number') || headerLower.includes('type') ? 1 : 0;
 
     let successCount = 0;
     let errorCount = 0;
