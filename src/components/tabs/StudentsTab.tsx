@@ -285,6 +285,32 @@ export function StudentsTab() {
 
   const isAdmin = user?.role === 'admin';
 
+  // Selection helpers
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredStudents.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredStudents.map(s => s.id)));
+    }
+  };
+
+  const bulkUpdateStudents = async (ids: string[], updates: Partial<Student>) => {
+    for (const id of ids) {
+      await updateStudent(id, updates);
+    }
+    await refetch();
+    setSelectedIds(new Set());
+  };
+
   // For teachers: only show students in their assigned homerooms (already filtered by useStudents)
   // For admins: show all or filter by selected class
   const classStudents = selectedClass 
@@ -306,6 +332,8 @@ export function StudentsTab() {
       const numB = parseInt(b.studentNumber?.split('-').pop() || '0', 10);
       return numA - numB;
     });
+
+  const selectedStudents = filteredStudents.filter(s => selectedIds.has(s.id));
 
   return (
     <div className="space-y-6">
