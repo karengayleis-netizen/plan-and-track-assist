@@ -651,7 +651,7 @@ export function StudentsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       {selectedClass ? 'No students in this homeroom yet.' : 'No students added yet.'}
                     </TableCell>
                   </TableRow>
