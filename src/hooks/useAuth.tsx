@@ -120,16 +120,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
           } catch (err) {
             console.error('[Auth Debug] Token refresh failed, falling back to Firestore:', err);
-            const [role, schoolId] = await Promise.all([
-              fetchUserRole(firebaseUser.uid),
+            const [roleData, schoolId] = await Promise.all([
+              fetchUserRoleAndHomerooms(firebaseUser.uid),
               fetchUserSchoolId(firebaseUser.uid),
             ]);
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || undefined,
-              role,
+              role: roleData.role,
               schoolId,
+              assignedHomerooms: roleData.assignedHomerooms,
             });
           } finally {
             setLoading(false);
