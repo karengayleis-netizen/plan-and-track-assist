@@ -18,6 +18,7 @@ import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
 import { freshnessLabel, isStale } from '@/lib/freshness';
 import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
+import { BulkActionsBar } from '@/components/students/BulkActionsBar';
 
 export function StudentsTab() {
   const { user } = useAuth();
