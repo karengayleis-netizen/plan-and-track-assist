@@ -1,26 +1,34 @@
 import { GraduationCap, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import { GlobalSearch } from './GlobalSearch';
+import { Student } from '@/types';
 
-export function Header() {
+interface HeaderProps {
+  onSelectStudent?: (student: Student) => void;
+  onNavigateTab?: (tab: string) => void;
+}
+
+export function Header({ onSelectStudent, onNavigateTab }: HeaderProps) {
   const { user, signOut } = useAuth();
 
   return (
     <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50 shadow-sm">
-      <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <div className="bg-primary p-2 rounded-xl shadow-sm">
             <GraduationCap className="h-6 w-6 text-primary-foreground" />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="text-lg font-semibold text-foreground">Plan & Track Assist</h1>
             <p className="text-xs text-muted-foreground">Data-driven student support</p>
           </div>
         </div>
-        
+
         {user && (
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2">
+          <div className="flex items-center gap-3 flex-1 justify-end">
+            <GlobalSearch onSelectStudent={onSelectStudent} onNavigateTab={onNavigateTab} />
+            <div className="hidden md:flex items-center gap-2">
               <span className="text-sm text-muted-foreground">
                 {user.email}
               </span>
@@ -41,10 +49,10 @@ export function Header() {
               variant="ghost" 
               size="sm" 
               onClick={signOut}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground shrink-0"
             >
-              <LogOut className="h-4 w-4 mr-2" />
-              Sign out
+              <LogOut className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Sign out</span>
             </Button>
           </div>
         )}
