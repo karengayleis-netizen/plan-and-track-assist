@@ -102,9 +102,11 @@ export function useStudents() {
     }
 
     try {
+      const now = new Date();
       await updateDoc(doc(db, 'students', id), {
         ...updates,
-        updatedAt: new Date(),
+        updatedAt: now,
+        lastUpdated: now,
       });
       await fetchStudents();
     } catch {

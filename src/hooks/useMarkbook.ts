@@ -64,9 +64,11 @@ export function useMarkbook(studentId?: string) {
     }
 
     try {
+      const now = new Date();
       const docRef = await addDoc(collection(db, 'markbook'), {
         ...validation.data,
-        schoolId: user?.schoolId, // Associate with user's school
+        schoolId: user?.schoolId,
+        lastUpdated: now,
       });
       await fetchEntries();
       return docRef.id;
