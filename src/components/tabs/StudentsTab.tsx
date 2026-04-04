@@ -564,6 +564,11 @@ export function StudentsTab() {
                       <TableCell>{student.gender || '—'}</TableCell>
                       <TableCell className="font-mono">{student.homeroom}</TableCell>
                       <TableCell>
+                        <span className={`text-xs ${isStale(student.lastUpdated) ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                          {freshnessLabel(student.lastUpdated)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex gap-1">
                           {student.isFocusStudent && (
                             <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Focus</span>
