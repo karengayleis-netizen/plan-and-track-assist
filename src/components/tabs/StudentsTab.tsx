@@ -494,6 +494,19 @@ export function StudentsTab() {
                   </p>
                 )}
               </div>
+
+              <div>
+                <Label htmlFor="oenInput">OEN (optional – used only for CSV matching)</Label>
+                <Input
+                  id="oenInput"
+                  placeholder="e.g. 123456789"
+                  value={oenInput}
+                  onChange={(e) => setOenInput(e.target.value)}
+                  className="focus:ring-primary mt-1"
+                  disabled={!selectedClass}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Not stored or displayed — only a hash is saved for matching.</p>
+              </div>
               
               <div className="flex gap-4">
                 <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1 border border-primary/20">
