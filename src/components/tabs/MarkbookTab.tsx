@@ -9,6 +9,7 @@ import { useMarkbook } from '@/hooks/useMarkbook';
 import { SUBJECTS, STRANDS } from '@/types';
 import { Download, BookOpen, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
+import { freshnessLabel, isStale } from '@/lib/freshness';
 
 export function MarkbookTab() {
   const { students } = useStudents();
