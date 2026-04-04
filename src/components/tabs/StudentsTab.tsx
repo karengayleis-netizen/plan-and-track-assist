@@ -23,6 +23,7 @@ export function StudentsTab() {
   const [editFocus, setEditFocus] = useState(false);
   const [editHighNeed, setEditHighNeed] = useState(false);
   const [editGender, setEditGender] = useState('');
+  const [editOen, setEditOen] = useState('');
   const { classes, loading: classesLoading, getClassByCode } = useClasses();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -284,17 +285,34 @@ export function StudentsTab() {
     setEditFocus(student.isFocusStudent);
     setEditHighNeed(student.isHighNeed);
     setEditGender(student.gender || '');
+    setEditOen('');
   };
 
   const handleSaveEdit = async () => {
     if (!editingStudent) return;
     try {
-      await updateStudent(editingStudent.id, {
+      const updates: Partial<Student> = {
         isFocusStudent: editFocus,
         isHighNeed: editHighNeed,
         gender: editGender,
-      });
+      };
+
+      // Hash and validate OEN if entered
+      const rawOEN = editOen.trim();
+      if (rawOEN) {
+        const hashed = await hashOEN(rawOEN);
+        // Check for duplicate OEN hash among other students
+        const existing = students.find(s => s.oenHash === hashed && s.id !== editingStudent.id);
+        if (existing) {
+          toast.error('This OEN is already assigned to another student.');
+          return;
+        }
+        updates.oenHash = hashed;
+      }
+
+      await updateStudent(editingStudent.id, updates);
       toast.success('Student updated');
+      setEditOen('');
       setEditingStudent(null);
     } catch {
       toast.error('Failed to update student');
@@ -666,6 +684,22 @@ export function StudentsTab() {
                   <SelectItem value="X">Non-binary</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label htmlFor="editOen">OEN (optional — used only for CSV matching)</Label>
+              <Input
+                id="editOen"
+                placeholder="Enter OEN"
+                value={editOen}
+                onChange={(e) => setEditOen(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Will be hashed for privacy. Raw OEN is never stored.
+              </p>
+              {editingStudent?.oenHash && (
+                <p className="text-xs text-primary mt-1">✓ OEN hash already on file</p>
+              )}
             </div>
             <div className="flex gap-4">
               <div className="flex items-center space-x-2 p-2 bg-primary/10 rounded-lg flex-1 border border-primary/20">
