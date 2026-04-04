@@ -207,9 +207,11 @@ export function StudentsTab() {
     }
 
     const codedStudentNumber = `${selectedClass.code}-${studentNumber.trim()}`;
+    const stableId = codedStudentNumber.trim();
     
     try {
       await addStudent({
+        stableStudentId: stableId,
         studentNumber: codedStudentNumber,
         initials: initials.trim(),
         firstName: '',

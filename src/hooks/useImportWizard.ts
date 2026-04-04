@@ -99,8 +99,9 @@ export function useImportWizard(onComplete?: () => void) {
 
       if (!rawIdentifier) return row;
 
-      // Match by studentNumber
-      const student = students.find(s => s.studentNumber === rawIdentifier);
+      // Match by stableStudentId first, then fallback to studentNumber
+      const student = students.find(s => s.stableStudentId === rawIdentifier)
+        || students.find(s => s.studentNumber === rawIdentifier);
 
       if (student) {
         return {

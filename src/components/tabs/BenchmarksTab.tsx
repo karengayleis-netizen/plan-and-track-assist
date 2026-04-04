@@ -78,10 +78,12 @@ export function BenchmarksTab() {
 
       const [identifier, type, scoreVal, dateVal, notesVal, refVal] = cols;
       
-      // Match by studentNumber
+      // Match by stableStudentId first, then fallback to studentNumber
       let student = null;
       if (identifier) {
-        student = students.find(s => s.studentNumber === identifier.trim());
+        const trimmed = identifier.trim();
+        student = students.find(s => s.stableStudentId === trimmed)
+          || students.find(s => s.studentNumber === trimmed);
       }
       
       if (!student) { errorCount++; continue; }

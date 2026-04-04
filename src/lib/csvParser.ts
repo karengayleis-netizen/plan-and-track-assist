@@ -62,7 +62,7 @@ function parseLine(line: string): string[] {
 // ── Column Alias Detection ───────────────────────────────────────────────────
 
 const COLUMN_ALIASES: Record<InternalField, string[]> = {
-  studentIdentifier: ['student number', 'studentnumber', 'student_number', 'number', 'student id', 'student_id', 'id', 'pupil id'],
+  studentIdentifier: ['student number', 'studentnumber', 'student_number', 'number', 'student id', 'student_id', 'id', 'pupil id', 'stable id', 'stablestudentid', 'stable_student_id'],
   assessmentType: ['type', 'measure', 'assessment', 'subtest', 'domain', 'skill', 'assessment type', 'assessment_type', 'test'],
   score: ['score', 'raw score', 'composite', 'percent', 'result', 'total', 'raw_score'],
   date: ['date', 'assessment date', 'completed on', 'assessment_date', 'test date', 'test_date'],
