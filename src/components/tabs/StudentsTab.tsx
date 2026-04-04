@@ -32,6 +32,7 @@ export function StudentsTab() {
   const [editFocus, setEditFocus] = useState(false);
   const [editHighNeed, setEditHighNeed] = useState(false);
   const [editGender, setEditGender] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
   const { classes, loading: classesLoading, getClassByCode } = useClasses();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
