@@ -7,9 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { ASSESSMENT_TYPES } from '@/types';
-import { Download, Calendar, FileText, Upload } from 'lucide-react';
+import { Download, Calendar, FileText, Upload, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { hashOEN } from '@/lib/oenHash';
+import { ImportWizard } from '@/components/benchmarks/ImportWizard';
 
 export function BenchmarksTab() {
   const { students } = useStudents();

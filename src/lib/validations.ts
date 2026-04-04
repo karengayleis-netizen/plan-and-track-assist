@@ -38,6 +38,18 @@ export const BenchmarkSchema = z.object({
   term: z.string().max(20, 'Term must be 20 characters or less').default(''),
   notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
   reference: z.string().max(200, 'Reference must be 200 characters or less').optional(),
+  source: z.string().max(50).optional(),
+  assessmentFamily: z.string().max(20).optional(),
+  scoreLabel: z.string().max(50).optional(),
+  rawScore: z.string().max(50).optional(),
+  benchmarkWindow: z.string().max(50).optional(),
+  strand: z.string().max(100).optional(),
+  importedAt: z.date().optional(),
+  importedBy: z.string().max(128).optional(),
+  rawImportMeta: z.object({
+    fileName: z.string(),
+    columnMapping: z.record(z.string()),
+  }).optional(),
 });
 
 export type ValidatedBenchmark = z.infer<typeof BenchmarkSchema>;

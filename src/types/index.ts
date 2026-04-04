@@ -53,6 +53,20 @@ export interface Benchmark {
   notes?: string;
   reference?: string;
   createdAt: Date;
+  // Import wizard fields (all optional for backward compat)
+  source?: string;
+  assessmentFamily?: string;
+  scoreLabel?: string;
+  rawScore?: string;
+  percent?: number;
+  benchmarkWindow?: string;
+  strand?: string;
+  importedAt?: Date;
+  importedBy?: string;
+  rawImportMeta?: {
+    fileName: string;
+    columnMapping: Record<string, string>;
+  };
 }
 
 export interface MarkbookEntry {
