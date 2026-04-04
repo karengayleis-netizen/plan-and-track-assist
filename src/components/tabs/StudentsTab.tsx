@@ -663,6 +663,15 @@ export function StudentsTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Student Summary Panel */}
+      <StudentSummaryPanel
+        student={summaryStudent}
+        open={!!summaryStudent}
+        onClose={() => setSummaryStudent(null)}
+        benchmarks={benchmarks}
+        markbookEntries={markbookEntries}
+      />
     </div>
   );
 }
