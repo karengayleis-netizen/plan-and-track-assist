@@ -145,6 +145,16 @@ export function BenchmarksTab() {
 
   return (
     <div className="space-y-6">
+      {/* Import Wizard Button */}
+      <div className="flex justify-end">
+        <Button onClick={() => setWizardOpen(true)} className="gap-2">
+          <Wand2 className="h-4 w-4" />
+          Import CSV Wizard
+        </Button>
+      </div>
+
+      <ImportWizard open={wizardOpen} onOpenChange={setWizardOpen} onComplete={refetch} />
+
       {/* Record Data & Recent Benchmarks */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-border/50 shadow-sm">
