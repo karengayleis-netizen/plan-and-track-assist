@@ -64,6 +64,7 @@ export function ImportWizard({ open, onOpenChange, onComplete }: ImportWizardPro
           <ResultsStep
             result={state.result!}
             rows={state.importRows}
+            errorSummary={wizard.errorSummary}
             onDownloadErrors={wizard.downloadErrorReport}
             onSaveTemplate={() => wizard.setStep(WizardStep.SaveTemplate)}
             onClose={handleClose}
