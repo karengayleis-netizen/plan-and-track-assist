@@ -28,7 +28,7 @@ export function useStudents() {
       }
       
       const querySnapshot = await getDocs(studentsQuery);
-      const studentsData = querySnapshot.docs.map(docSnapshot => {
+      let studentsData = querySnapshot.docs.map(docSnapshot => {
         const data = docSnapshot.data() as DocumentData;
         return {
           id: docSnapshot.id,
@@ -37,6 +37,14 @@ export function useStudents() {
           updatedAt: data.updatedAt?.toDate(),
         } as Student;
       });
+
+      // For teachers: filter to only students in their assigned homerooms
+      if (user?.role === 'teacher' && user?.assignedHomerooms && user.assignedHomerooms.length > 0) {
+        studentsData = studentsData.filter(s => 
+          user.assignedHomerooms!.includes(s.homeroom)
+        );
+      }
+
       setStudents(studentsData);
       setError(null);
     } catch {

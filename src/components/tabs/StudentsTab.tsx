@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useStudents } from '@/hooks/useStudents';
 import { useClasses } from '@/hooks/useClasses';
+import { useAuth } from '@/hooks/useAuth';
 import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
