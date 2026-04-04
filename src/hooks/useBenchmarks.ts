@@ -43,6 +43,7 @@ export function useBenchmarks(studentId?: string) {
           ...data,
           date: data.date?.toDate(),
           createdAt: data.createdAt?.toDate(),
+          lastUpdated: data.lastUpdated?.toDate() || data.createdAt?.toDate(),
         } as Benchmark;
       });
       setBenchmarks(benchmarksData);
