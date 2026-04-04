@@ -14,6 +14,7 @@ import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'l
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
+import { hashOEN } from '@/lib/oenHash';
 
 export function StudentsTab() {
   const { user } = useAuth();
