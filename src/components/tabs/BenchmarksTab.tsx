@@ -7,14 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { ASSESSMENT_TYPES } from '@/types';
-import { Download, Calendar, FileText, Upload } from 'lucide-react';
+import { Download, Calendar, FileText, Upload, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { hashOEN } from '@/lib/oenHash';
+import { ImportWizard } from '@/components/benchmarks/ImportWizard';
 
 export function BenchmarksTab() {
   const { students } = useStudents();
-  const { benchmarks, loading, addBenchmark } = useBenchmarks();
+  const { benchmarks, loading, addBenchmark, refetch } = useBenchmarks();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
   
   // Form state
   const [selectedStudent, setSelectedStudent] = useState('');
@@ -143,6 +145,16 @@ export function BenchmarksTab() {
 
   return (
     <div className="space-y-6">
+      {/* Import Wizard Button */}
+      <div className="flex justify-end">
+        <Button onClick={() => setWizardOpen(true)} className="gap-2">
+          <Wand2 className="h-4 w-4" />
+          Import CSV Wizard
+        </Button>
+      </div>
+
+      <ImportWizard open={wizardOpen} onOpenChange={setWizardOpen} onComplete={refetch} />
+
       {/* Record Data & Recent Benchmarks */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-border/50 shadow-sm">
