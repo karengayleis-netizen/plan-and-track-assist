@@ -32,6 +32,7 @@ export function MissingDataTab() {
       .filter(s => {
         if (filterClass !== 'all' && s.homeroom !== filterClass) return false;
         if (filterGrade !== 'all' && s.grade !== filterGrade) return false;
+        if (filterTag !== 'all' && !(s.tags || []).includes(filterTag)) return false;
         return true;
       })
       .map(student => {
