@@ -1,0 +1,304 @@
+import { useState, useCallback } from 'react';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useAuth } from './useAuth';
+import { useStudents } from './useStudents';
+import { hashOEN } from '@/lib/oenHash';
+import { parseCSV, detectColumnMapping, buildImportRows, generateErrorReportCSV } from '@/lib/csvParser';
+import { getPreset } from '@/lib/importPresets';
+import type {
+  ImportSource,
+  WizardStep,
+  ColumnMapping,
+  ImportRow,
+  ImportResult,
+  ImportTemplate,
+  InternalField,
+} from '@/types/importWizard';
+import { WizardStep as WS } from '@/types/importWizard';
+
+export interface WizardState {
+  step: WizardStep;
+  source: ImportSource | null;
+  fileName: string;
+  headers: string[];
+  rawRows: string[][];
+  columnMapping: ColumnMapping;
+  importRows: ImportRow[];
+  result: ImportResult | null;
+  importing: boolean;
+  templates: ImportTemplate[];
+}
+
+const emptyMapping = (): ColumnMapping => {
+  const m: Partial<ColumnMapping> = {};
+  const fields: InternalField[] = [
+    'studentIdentifier', 'assessmentType', 'score', 'date',
+    'notes', 'ref', 'strand', 'benchmarkWindow', 'teacher',
+    'classCode', 'rawScore', 'percent', 'status',
+  ];
+  for (const f of fields) m[f] = -1;
+  return m as ColumnMapping;
+};
+
+export function useImportWizard(onComplete?: () => void) {
+  const { user } = useAuth();
+  const { students } = useStudents();
+
+  const [state, setState] = useState<WizardState>({
+    step: WS.ChooseSource,
+    source: null,
+    fileName: '',
+    headers: [],
+    rawRows: [],
+    columnMapping: emptyMapping(),
+    importRows: [],
+    result: null,
+    importing: false,
+    templates: [],
+  });
+
+  const setStep = (step: WizardStep) => setState(s => ({ ...s, step }));
+
+  // Step 1 ─────────────────────────────────────────────────────────────────────
+  const selectSource = useCallback((source: ImportSource) => {
+    setState(s => ({ ...s, source, step: WS.UploadCSV }));
+  }, []);
+
+  // Step 2 ─────────────────────────────────────────────────────────────────────
+  const uploadFile = useCallback((file: File) => {
+    file.text().then(text => {
+      const { headers, rows } = parseCSV(text);
+      const source = state.source || 'generic_csv';
+      const mapping = detectColumnMapping(headers, source);
+      setState(s => ({
+        ...s,
+        fileName: file.name,
+        headers,
+        rawRows: rows,
+        columnMapping: mapping,
+        step: WS.MapColumns,
+      }));
+    });
+  }, [state.source]);
+
+  // Step 3 ─────────────────────────────────────────────────────────────────────
+  const updateMapping = useCallback((field: InternalField, colIndex: number) => {
+    setState(s => ({
+      ...s,
+      columnMapping: { ...s.columnMapping, [field]: colIndex },
+    }));
+  }, []);
+
+  const confirmMapping = useCallback(async () => {
+    // Build rows + match students
+    const rows = buildImportRows(state.rawRows, state.columnMapping);
+
+    // Match students by OEN hash first, then studentNumber fallback
+    const matched = await Promise.all(
+      rows.map(async (row) => {
+        const identifierIdx = state.columnMapping.studentIdentifier;
+        const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx]?.trim() : '';
+
+        if (!rawIdentifier) return row;
+
+        // Try OEN hash match
+        const hashed = await hashOEN(rawIdentifier);
+        let student = hashed ? students.find(s => s.oenHash === hashed) : undefined;
+
+        // Fallback: coded studentNumber
+        if (!student) {
+          student = students.find(s => s.studentNumber === rawIdentifier);
+        }
+
+        if (student) {
+          return {
+            ...row,
+            matchedStudentId: student.id,
+            matchedStudentNumber: student.studentNumber,
+            matchedStudentInitials: student.initials || `${student.firstName?.[0] || ''}${student.lastName?.[0] || ''}`,
+            status: row.status === 'error' ? 'error' as const : row.status,
+          };
+        }
+
+        return {
+          ...row,
+          status: row.errors.length > 0 ? 'error' as const : 'warning' as const,
+          warnings: [...row.warnings, 'No student match found'],
+        };
+      })
+    );
+
+    setState(s => ({ ...s, importRows: matched, step: WS.PreviewValidate }));
+  }, [state.rawRows, state.columnMapping, students]);
+
+  // Step 4 → 5 Import ─────────────────────────────────────────────────────────
+  const runImport = useCallback(async () => {
+    if (!user || !state.source) return;
+
+    setState(s => ({ ...s, importing: true }));
+
+    const preset = getPreset(state.source);
+    const validRows = state.importRows.filter(r => r.status !== 'error' && r.matchedStudentId);
+    let importedCount = 0;
+    let errorCount = 0;
+
+    // Build column name map for metadata (no raw OEN)
+    const columnNameMap: Record<string, string> = {};
+    for (const [field, idx] of Object.entries(state.columnMapping)) {
+      if (idx >= 0 && idx < state.headers.length) {
+        columnNameMap[field] = state.headers[idx];
+      }
+    }
+
+    for (const row of validRows) {
+      try {
+        const m = state.columnMapping;
+        const getVal = (field: InternalField) =>
+          m[field] >= 0 ? row.rawValues[m[field]]?.trim() || '' : '';
+
+        const percentStr = getVal('percent');
+        const percentVal = percentStr ? parseFloat(percentStr) : undefined;
+
+        await addDoc(collection(db, 'benchmarks'), {
+          schoolId: user.schoolId || '',
+          studentId: row.matchedStudentId,
+          studentNumber: row.matchedStudentNumber || '',
+          initials: row.matchedStudentInitials || '',
+          source: state.source,
+          assessmentFamily: preset.assessmentFamily,
+          assessmentType: row.assessmentType,
+          assessmentName: row.assessmentType,
+          score: row.score,
+          scoreLabel: getVal('status') || undefined,
+          rawScore: getVal('rawScore') || undefined,
+          maxScore: 100,
+          percent: percentVal,
+          percentage: percentVal || 0,
+          benchmarkWindow: getVal('benchmarkWindow') || undefined,
+          strand: getVal('strand') || undefined,
+          subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
+          date: row.parsedDate || new Date(),
+          term: getVal('benchmarkWindow') || '',
+          notes: getVal('notes') || undefined,
+          ref: getVal('ref') || undefined,
+          reference: getVal('ref') || undefined,
+          importedAt: new Date(),
+          importedBy: user.uid,
+          rawImportMeta: {
+            fileName: state.fileName,
+            columnMapping: columnNameMap,
+          },
+          createdAt: new Date(),
+        });
+        importedCount++;
+      } catch {
+        errorCount++;
+      }
+    }
+
+    const unmatchedCount = state.importRows.filter(r => !r.matchedStudentId && r.status !== 'error').length;
+    const result: ImportResult = {
+      totalRows: state.importRows.length,
+      importedRows: importedCount,
+      skippedRows: state.importRows.length - validRows.length,
+      unmatchedRows: unmatchedCount,
+      errorRows: errorCount,
+    };
+
+    // Save import run for audit
+    try {
+      await addDoc(collection(db, 'benchmark_import_runs'), {
+        schoolId: user.schoolId || '',
+        source: state.source,
+        fileName: state.fileName,
+        totalRows: result.totalRows,
+        importedRows: result.importedRows,
+        skippedRows: result.skippedRows,
+        unmatchedRows: result.unmatchedRows,
+        importedBy: user.uid,
+        createdAt: new Date(),
+      });
+    } catch {
+      // non-critical
+    }
+
+    setState(s => ({ ...s, result, importing: false, step: WS.ImportResults }));
+    onComplete?.();
+  }, [user, state.source, state.importRows, state.columnMapping, state.headers, state.fileName, onComplete]);
+
+  // Step 6: Templates ─────────────────────────────────────────────────────────
+  const loadTemplates = useCallback(async () => {
+    if (!user?.schoolId || !state.source) return;
+    try {
+      const q = query(
+        collection(db, 'benchmark_import_templates'),
+        where('schoolId', '==', user.schoolId),
+        where('source', '==', state.source),
+      );
+      const snap = await getDocs(q);
+      const templates = snap.docs.map(d => ({ id: d.id, ...d.data() } as ImportTemplate));
+      setState(s => ({ ...s, templates }));
+    } catch {
+      // ignore
+    }
+  }, [user?.schoolId, state.source]);
+
+  const applyTemplate = useCallback((template: ImportTemplate) => {
+    setState(s => ({ ...s, columnMapping: template.columnMap }));
+  }, []);
+
+  const saveTemplate = useCallback(async (name: string) => {
+    if (!user?.schoolId || !state.source) return;
+    await addDoc(collection(db, 'benchmark_import_templates'), {
+      schoolId: user.schoolId,
+      source: state.source,
+      templateName: name,
+      columnMap: state.columnMapping,
+      createdBy: user.uid,
+      createdAt: new Date(),
+    });
+    await loadTemplates();
+  }, [user, state.source, state.columnMapping, loadTemplates]);
+
+  const downloadErrorReport = useCallback(() => {
+    const csv = generateErrorReportCSV(state.importRows);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `import_errors_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [state.importRows]);
+
+  const reset = useCallback(() => {
+    setState({
+      step: WS.ChooseSource,
+      source: null,
+      fileName: '',
+      headers: [],
+      rawRows: [],
+      columnMapping: emptyMapping(),
+      importRows: [],
+      result: null,
+      importing: false,
+      templates: [],
+    });
+  }, []);
+
+  return {
+    state,
+    setStep,
+    selectSource,
+    uploadFile,
+    updateMapping,
+    confirmMapping,
+    runImport,
+    loadTemplates,
+    applyTemplate,
+    saveTemplate,
+    downloadErrorReport,
+    reset,
+  };
+}
