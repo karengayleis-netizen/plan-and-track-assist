@@ -9,6 +9,7 @@ import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { ASSESSMENT_TYPES } from '@/types';
 import { Download, Calendar, FileText, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { hashOEN } from '@/lib/oenHash';
 
 export function BenchmarksTab() {
   const { students } = useStudents();
@@ -63,7 +64,8 @@ export function BenchmarksTab() {
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
     // Skip header if it looks like one
-    const startIdx = lines[0]?.toLowerCase().includes('studentnumber') || lines[0]?.toLowerCase().includes('type') ? 1 : 0;
+    const headerLower = lines[0]?.toLowerCase() || '';
+    const startIdx = headerLower.includes('oen') || headerLower.includes('studentnumber') || headerLower.includes('type') ? 1 : 0;
 
     let successCount = 0;
     let errorCount = 0;
@@ -72,8 +74,20 @@ export function BenchmarksTab() {
       const cols = lines[i].split(',').map(c => c.trim());
       if (cols.length < 3) { errorCount++; continue; }
 
-      const [studentNumber, type, scoreVal, dateVal, notesVal, refVal] = cols;
-      const student = students.find(s => s.studentNumber === studentNumber);
+      const [identifier, type, scoreVal, dateVal, notesVal, refVal] = cols;
+      
+      // Try matching by OEN hash first, then fall back to coded studentNumber
+      let student = null;
+      if (identifier) {
+        const hashedOEN = await hashOEN(identifier);
+        student = students.find(s => s.oenHash && s.oenHash === hashedOEN);
+        
+        // Fallback: match by coded student number for backward compatibility
+        if (!student) {
+          student = students.find(s => s.studentNumber === identifier);
+        }
+      }
+      
       if (!student) { errorCount++; continue; }
 
       try {
@@ -237,10 +251,13 @@ export function BenchmarksTab() {
         <CardContent className="space-y-3">
           <div className="text-xs text-muted-foreground space-y-1">
             <p>
-              CSV columns: <code className="bg-muted px-1.5 py-0.5 rounded">StudentNumber</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Type</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Score</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Date</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Notes</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Ref</code>
+              CSV columns: <code className="bg-muted px-1.5 py-0.5 rounded">OEN or StudentNumber</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Type</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Score</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Date</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Notes</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Ref</code>
             </p>
             <p className="text-muted-foreground/70">
-              Example: <code className="bg-muted px-1.5 py-0.5 rounded">1AF-3, Acadience Reading, Level 42, 2026-03-15, Spring assessment, REF-001</code>
+              Matches by OEN hash first, then falls back to coded student number (e.g., 1AF-3).
+            </p>
+            <p className="text-muted-foreground/70">
+              Example: <code className="bg-muted px-1.5 py-0.5 rounded">123456789, Acadience Reading, Level 42, 2026-03-15, Spring assessment, REF-001</code>
             </p>
           </div>
           <Input ref={fileInputRef} type="file" accept=".csv" className="text-sm focus:ring-primary" />

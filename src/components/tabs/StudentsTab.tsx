@@ -14,6 +14,7 @@ import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'l
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
+import { hashOEN } from '@/lib/oenHash';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -35,6 +36,7 @@ export function StudentsTab() {
   const [isFocusStudent, setIsFocusStudent] = useState(false);
   const [isHighNeed, setIsHighNeed] = useState(false);
   const [selectedGender, setSelectedGender] = useState('');
+  const [oenInput, setOenInput] = useState('');
 
   // Get selected class details
   const selectedClass = classes.find(c => c.id === selectedClassId);
@@ -85,7 +87,7 @@ export function StudentsTab() {
     return { valid: true, gradeNum };
   };
 
-  // Handle CSV upload - format: StudentNumber, Initials, Grade
+  // Handle CSV upload - format: StudentNumber, Initials, Grade, Gender, OEN (OEN optional)
   const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -106,7 +108,8 @@ export function StudentsTab() {
       const hasHeader = headerLine.includes('student') || 
                        headerLine.includes('number') || 
                        headerLine.includes('initial') ||
-                       headerLine.includes('grade');
+                       headerLine.includes('grade') ||
+                       headerLine.includes('oen');
       const startIndex = hasHeader ? 1 : 0;
       
       let successCount = 0;
@@ -119,14 +122,14 @@ export function StudentsTab() {
 
         const values = parseCSVLine(line);
         
-        // Expected format: StudentNumber, Initials, Grade
+        // Expected format: StudentNumber, Initials, Grade, Gender, OEN (last two optional)
         if (values.length < 3) {
-          errors.push(`Row ${i + 1}: Expected 3 columns (StudentNumber, Initials, Grade), got ${values.length}`);
+          errors.push(`Row ${i + 1}: Expected at least 3 columns (StudentNumber, Initials, Grade), got ${values.length}`);
           errorCount++;
           continue;
         }
 
-        const [number, studentInitials, gradeStr, genderStr] = values;
+        const [number, studentInitials, gradeStr, genderStr, rawOEN] = values;
         
         // Validate grade against homeroom
         const gradeValidation = validateGradeForHomeroom(gradeStr, selectedClass);
@@ -136,6 +139,19 @@ export function StudentsTab() {
           continue;
         }
 
+        // Hash OEN if provided (never store raw)
+        let oenHash: string | undefined;
+        if (rawOEN?.trim()) {
+          oenHash = await hashOEN(rawOEN.trim());
+          // Check for duplicate OEN hash
+          const existing = students.find(s => s.oenHash === oenHash);
+          if (existing) {
+            errors.push(`Row ${i + 1}: OEN already assigned to student ${existing.studentNumber}`);
+            errorCount++;
+            continue;
+          }
+        }
+
         // Generate coded student number: homeroom-number (e.g., "2AF-1")
         const codedStudentNumber = `${selectedClass.code}-${number.trim()}`;
         
@@ -143,8 +159,8 @@ export function StudentsTab() {
           await addStudent({
             studentNumber: codedStudentNumber,
             initials: studentInitials.trim(),
-            firstName: '', // Not stored for privacy
-            lastName: '',  // Not stored for privacy
+            firstName: '',
+            lastName: '',
             grade: String(gradeValidation.gradeNum),
             homeroom: selectedClass.code,
             yearGroup: '',
@@ -155,10 +171,10 @@ export function StudentsTab() {
             isFocusStudent: false,
             isHighNeed: false,
             gender: genderStr?.trim().toUpperCase() || '',
+            oenHash,
           });
           successCount++;
         } catch (err) {
-          console.error(`Failed to add student from row ${i + 1}:`, err);
           errors.push(`Row ${i + 1}: Failed to save student`);
           errorCount++;
         }
@@ -169,14 +185,12 @@ export function StudentsTab() {
       }
       if (errorCount > 0) {
         toast.warning(`${errorCount} row(s) could not be imported`);
-        // Log first few errors for debugging
         errors.slice(0, 5).forEach(err => console.warn(err));
         if (errors.length > 5) {
           console.warn(`... and ${errors.length - 5} more errors`);
         }
       }
     } catch (err) {
-      console.error('CSV parsing error:', err);
       toast.error('Failed to parse CSV file');
     } finally {
       setIsUploading(false);
@@ -207,6 +221,19 @@ export function StudentsTab() {
       return;
     }
 
+    // Hash OEN if provided (never store raw)
+    let oenHash: string | undefined;
+    const rawOEN = oenInput.trim();
+    if (rawOEN) {
+      oenHash = await hashOEN(rawOEN);
+      // Check for duplicate OEN hash
+      const existing = students.find(s => s.oenHash === oenHash);
+      if (existing) {
+        toast.error('This OEN is already assigned to another student.');
+        return;
+      }
+    }
+
     const codedStudentNumber = `${selectedClass.code}-${studentNumber.trim()}`;
     
     try {
@@ -225,15 +252,17 @@ export function StudentsTab() {
         isFocusStudent,
         isHighNeed,
         gender: selectedGender || '',
+        oenHash,
       });
       toast.success('Student saved successfully');
-      // Reset form
+      // Reset form (raw OEN is cleared — never persisted in state)
       setStudentNumber('');
       setInitials('');
       setSelectedGrade('');
       setIsFocusStudent(false);
       setIsHighNeed(false);
       setSelectedGender('');
+      setOenInput('');
     } catch (err) {
       toast.error('Failed to save student');
     }
@@ -311,7 +340,7 @@ export function StudentsTab() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
-              CSV: StudentNumber, Initials, Grade, Gender
+              CSV: StudentNumber, Initials, Grade, Gender, OEN
             </p>
           </div>
         </CardHeader>
@@ -367,12 +396,12 @@ export function StudentsTab() {
                 </h4>
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
-                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender</code>
+                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender, OEN</code>
                   </p>
                   <p>
-                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
+                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M, 123456789</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
                   </p>
-                  <p className="text-muted-foreground/70">Gender column is optional (M/F/X)</p>
+                  <p className="text-muted-foreground/70">Gender and OEN columns are optional. OEN is used only for matching and is not stored or displayed.</p>
                   {selectedClass && (
                     <p className="text-primary">
                       ✓ Allowed grades for {selectedClass.code}: {selectedClass.allowedGrades.map(g => formatGradeDisplay(g)).join(', ')}
@@ -464,6 +493,19 @@ export function StudentsTab() {
                     Select a homeroom to see available grades
                   </p>
                 )}
+              </div>
+
+              <div>
+                <Label htmlFor="oenInput">OEN (optional – used only for CSV matching)</Label>
+                <Input
+                  id="oenInput"
+                  placeholder="e.g. 123456789"
+                  value={oenInput}
+                  onChange={(e) => setOenInput(e.target.value)}
+                  className="focus:ring-primary mt-1"
+                  disabled={!selectedClass}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Not stored or displayed — only a hash is saved for matching.</p>
               </div>
               
               <div className="flex gap-4">
