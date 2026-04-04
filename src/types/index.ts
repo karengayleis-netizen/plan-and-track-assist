@@ -85,6 +85,7 @@ export interface MarkbookEntry {
   date: Date;
   evidenceUrl?: string;
   notes?: string;
+  lastUpdated?: Date;
 }
 
 export interface SupportPlan {
