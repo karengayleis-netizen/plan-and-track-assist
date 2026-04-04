@@ -64,7 +64,8 @@ export function BenchmarksTab() {
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
     // Skip header if it looks like one
-    const startIdx = lines[0]?.toLowerCase().includes('studentnumber') || lines[0]?.toLowerCase().includes('type') ? 1 : 0;
+    const headerLower = lines[0]?.toLowerCase() || '';
+    const startIdx = headerLower.includes('oen') || headerLower.includes('studentnumber') || headerLower.includes('type') ? 1 : 0;
 
     let successCount = 0;
     let errorCount = 0;
@@ -73,8 +74,20 @@ export function BenchmarksTab() {
       const cols = lines[i].split(',').map(c => c.trim());
       if (cols.length < 3) { errorCount++; continue; }
 
-      const [studentNumber, type, scoreVal, dateVal, notesVal, refVal] = cols;
-      const student = students.find(s => s.studentNumber === studentNumber);
+      const [identifier, type, scoreVal, dateVal, notesVal, refVal] = cols;
+      
+      // Try matching by OEN hash first, then fall back to coded studentNumber
+      let student = null;
+      if (identifier) {
+        const hashedOEN = await hashOEN(identifier);
+        student = students.find(s => s.oenHash && s.oenHash === hashedOEN);
+        
+        // Fallback: match by coded student number for backward compatibility
+        if (!student) {
+          student = students.find(s => s.studentNumber === identifier);
+        }
+      }
+      
       if (!student) { errorCount++; continue; }
 
       try {
