@@ -6,6 +6,7 @@ export interface Homeroom {
   code: string;           // e.g., "2AF", "45E" - primary identifier
   name?: string;          // Optional display name e.g., "Grade 2 French"
   allowedGrades: number[]; // e.g., [4, 5] for split grades, [2] for single grade
+  teacherIds?: string[];  // UIDs of assigned teachers (supports co-teaching)
   schoolId: string;       // For multi-tenant isolation
   createdBy: string;      // UID of admin who created
   createdAt: Date;

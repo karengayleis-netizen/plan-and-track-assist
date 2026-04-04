@@ -21,7 +21,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Fetch user role from Firestore user_roles collection (separate from user profile for security)
-async function fetchUserRole(uid: string): Promise<'teacher' | 'admin'> {
+async function fetchUserRoleAndHomerooms(uid: string): Promise<{ role: 'teacher' | 'admin'; assignedHomerooms: string[] }> {
   try {
     console.log('[Auth Debug] Fetching role for UID:', uid);
     const roleDocRef = doc(db, 'user_roles', uid);
@@ -34,17 +34,17 @@ async function fetchUserRole(uid: string): Promise<'teacher' | 'admin'> {
       const data = roleDoc.data();
       console.log('[Auth Debug] Role document data:', data);
       const role = data?.role;
-      console.log('[Auth Debug] Raw role value:', role, 'type:', typeof role);
+      const assignedHomerooms = data?.assignedHomerooms || [];
+      console.log('[Auth Debug] Raw role value:', role, 'assignedHomerooms:', assignedHomerooms);
       if (role === 'admin' || role === 'teacher') {
-        console.log('[Auth Debug] Returning role:', role);
-        return role;
+        return { role, assignedHomerooms };
       }
     }
     console.log('[Auth Debug] No valid role found, defaulting to teacher');
-    return 'teacher';
+    return { role: 'teacher', assignedHomerooms: [] };
   } catch (error) {
     console.error('[Auth Debug] Error fetching role:', error);
-    return 'teacher';
+    return { role: 'teacher', assignedHomerooms: [] };
   }
 }
 
