@@ -92,23 +92,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log('[Auth Debug] Token claims:', { role: claimRole, schoolId: claimSchoolId });
 
             // Use claims if available, otherwise fall back to Firestore
-            const [role, schoolId] = await Promise.all([
+            const [roleData, schoolId] = await Promise.all([
               (claimRole === 'admin' || claimRole === 'teacher'
-                ? Promise.resolve(claimRole as 'admin' | 'teacher')
-                : fetchUserRole(firebaseUser.uid)),
+                ? Promise.resolve({ role: claimRole as 'admin' | 'teacher', assignedHomerooms: [] as string[] })
+                : fetchUserRoleAndHomerooms(firebaseUser.uid)),
               claimSchoolId
                 ? Promise.resolve(claimSchoolId)
                 : fetchUserSchoolId(firebaseUser.uid),
             ]);
 
-            console.log('[Auth Debug] Final user state:', { uid: firebaseUser.uid, role, schoolId });
+            // If we got role from claims, still fetch assignedHomerooms from Firestore
+            let assignedHomerooms = roleData.assignedHomerooms;
+            if ((claimRole === 'admin' || claimRole === 'teacher') && assignedHomerooms.length === 0) {
+              const firestoreData = await fetchUserRoleAndHomerooms(firebaseUser.uid);
+              assignedHomerooms = firestoreData.assignedHomerooms;
+            }
+
+            console.log('[Auth Debug] Final user state:', { uid: firebaseUser.uid, role: roleData.role, schoolId, assignedHomerooms });
 
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || undefined,
-              role,
+              role: roleData.role,
               schoolId,
+              assignedHomerooms,
             });
           } catch (err) {
             console.error('[Auth Debug] Token refresh failed, falling back to Firestore:', err);
