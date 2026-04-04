@@ -648,6 +648,15 @@ export function StudentsTab() {
                         </span>
                       </TableCell>
                       <TableCell>
+                        <div className="flex flex-wrap gap-1 max-w-[160px]">
+                          {(student.tags || []).map(tag => (
+                            <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex gap-1">
                           {student.isFocusStudent && (
                             <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Focus</span>
