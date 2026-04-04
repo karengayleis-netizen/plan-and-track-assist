@@ -16,6 +16,7 @@ import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
 
 export function StudentsTab() {
+  const { user } = useAuth();
   const { students, loading, addStudent, updateStudent, deleteStudent, refetch } = useStudents();
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editFocus, setEditFocus] = useState(false);
