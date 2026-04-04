@@ -35,6 +35,7 @@ export default function Dashboard() {
       case 'markbook': return <MarkbookTab />;
       case 'insights': return <InsightsTab />;
       case 'triangulation': return <TriangulationTab />;
+      case 'missing-data': return <MissingDataTab />;
       case 'support-plan': return <SupportPlanTab />;
       case 'admin': return <AdminTab />;
       default: return <StudentsTab />;
