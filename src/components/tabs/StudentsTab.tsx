@@ -509,7 +509,7 @@ export function StudentsTab() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>
-              {selectedClass ? `Students in ${selectedClass.code}` : 'All Students'}
+              {selectedClass ? `Students in ${selectedClass.code}` : (isAdmin ? 'All Students' : 'Select a homeroom')}
               {selectedClass && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">
                   ({filteredStudents.length} students)
