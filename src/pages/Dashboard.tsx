@@ -7,6 +7,7 @@ import { BenchmarksTab } from '@/components/tabs/BenchmarksTab';
 import { MarkbookTab } from '@/components/tabs/MarkbookTab';
 import { InsightsTab } from '@/components/tabs/InsightsTab';
 import { TriangulationTab } from '@/components/tabs/TriangulationTab';
+import { MissingDataTab } from '@/components/tabs/MissingDataTab';
 import { SupportPlanTab } from '@/components/tabs/SupportPlanTab';
 import { AdminTab } from '@/components/tabs/AdminTab';
 import { Loader2 } from 'lucide-react';
