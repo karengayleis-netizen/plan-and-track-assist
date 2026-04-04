@@ -87,7 +87,7 @@ export function StudentsTab() {
     return { valid: true, gradeNum };
   };
 
-  // Handle CSV upload - format: StudentNumber, Initials, Grade
+  // Handle CSV upload - format: StudentNumber, Initials, Grade, Gender, OEN (OEN optional)
   const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -108,7 +108,8 @@ export function StudentsTab() {
       const hasHeader = headerLine.includes('student') || 
                        headerLine.includes('number') || 
                        headerLine.includes('initial') ||
-                       headerLine.includes('grade');
+                       headerLine.includes('grade') ||
+                       headerLine.includes('oen');
       const startIndex = hasHeader ? 1 : 0;
       
       let successCount = 0;
@@ -121,14 +122,14 @@ export function StudentsTab() {
 
         const values = parseCSVLine(line);
         
-        // Expected format: StudentNumber, Initials, Grade
+        // Expected format: StudentNumber, Initials, Grade, Gender, OEN (last two optional)
         if (values.length < 3) {
-          errors.push(`Row ${i + 1}: Expected 3 columns (StudentNumber, Initials, Grade), got ${values.length}`);
+          errors.push(`Row ${i + 1}: Expected at least 3 columns (StudentNumber, Initials, Grade), got ${values.length}`);
           errorCount++;
           continue;
         }
 
-        const [number, studentInitials, gradeStr, genderStr] = values;
+        const [number, studentInitials, gradeStr, genderStr, rawOEN] = values;
         
         // Validate grade against homeroom
         const gradeValidation = validateGradeForHomeroom(gradeStr, selectedClass);
@@ -138,6 +139,19 @@ export function StudentsTab() {
           continue;
         }
 
+        // Hash OEN if provided (never store raw)
+        let oenHash: string | undefined;
+        if (rawOEN?.trim()) {
+          oenHash = await hashOEN(rawOEN.trim());
+          // Check for duplicate OEN hash
+          const existing = students.find(s => s.oenHash === oenHash);
+          if (existing) {
+            errors.push(`Row ${i + 1}: OEN already assigned to student ${existing.studentNumber}`);
+            errorCount++;
+            continue;
+          }
+        }
+
         // Generate coded student number: homeroom-number (e.g., "2AF-1")
         const codedStudentNumber = `${selectedClass.code}-${number.trim()}`;
         
@@ -145,8 +159,8 @@ export function StudentsTab() {
           await addStudent({
             studentNumber: codedStudentNumber,
             initials: studentInitials.trim(),
-            firstName: '', // Not stored for privacy
-            lastName: '',  // Not stored for privacy
+            firstName: '',
+            lastName: '',
             grade: String(gradeValidation.gradeNum),
             homeroom: selectedClass.code,
             yearGroup: '',
@@ -157,10 +171,10 @@ export function StudentsTab() {
             isFocusStudent: false,
             isHighNeed: false,
             gender: genderStr?.trim().toUpperCase() || '',
+            oenHash,
           });
           successCount++;
         } catch (err) {
-          console.error(`Failed to add student from row ${i + 1}:`, err);
           errors.push(`Row ${i + 1}: Failed to save student`);
           errorCount++;
         }
@@ -171,14 +185,12 @@ export function StudentsTab() {
       }
       if (errorCount > 0) {
         toast.warning(`${errorCount} row(s) could not be imported`);
-        // Log first few errors for debugging
         errors.slice(0, 5).forEach(err => console.warn(err));
         if (errors.length > 5) {
           console.warn(`... and ${errors.length - 5} more errors`);
         }
       }
     } catch (err) {
-      console.error('CSV parsing error:', err);
       toast.error('Failed to parse CSV file');
     } finally {
       setIsUploading(false);
