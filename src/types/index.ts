@@ -16,7 +16,8 @@ export interface Student {
   isFocusStudent: boolean;
   isHighNeed: boolean;
   gender?: string;
-  
+  lastUpdated?: Date;
+
   createdAt: Date;
   updatedAt: Date;
 }
