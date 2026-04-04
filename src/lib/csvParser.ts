@@ -170,7 +170,7 @@ export function buildImportRows(
   });
 }
 
-// ── Error Report CSV (no raw OEN) ────────────────────────────────────────────
+// ── Error Report CSV ─────────────────────────────────────────────────────────
 
 export function generateErrorReportCSV(rows: ImportRow[]): string {
   const skipped = rows.filter(r => r.status === 'error' || !r.matchedStudentId);

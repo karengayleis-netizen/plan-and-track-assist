@@ -14,7 +14,7 @@ interface MappingStepProps {
 }
 
 const FIELD_LABELS: Record<InternalField, string> = {
-  studentIdentifier: 'Student Identifier (OEN / Student Number)',
+  studentIdentifier: 'Student Number',
   assessmentType: 'Assessment Type',
   score: 'Score',
   date: 'Date',
