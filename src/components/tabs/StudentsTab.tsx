@@ -285,6 +285,7 @@ export function StudentsTab() {
     setEditFocus(student.isFocusStudent);
     setEditHighNeed(student.isHighNeed);
     setEditGender(student.gender || '');
+    setEditOen('');
   };
 
   const handleSaveEdit = async () => {
