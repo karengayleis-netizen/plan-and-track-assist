@@ -16,7 +16,8 @@ export interface Student {
   isFocusStudent: boolean;
   isHighNeed: boolean;
   gender?: string;
-  
+  lastUpdated?: Date;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +54,7 @@ export interface Benchmark {
   term: string;
   notes?: string;
   reference?: string;
+  lastUpdated?: Date;
   createdAt: Date;
   // Import wizard fields (all optional for backward compat)
   source?: string;
@@ -83,6 +85,7 @@ export interface MarkbookEntry {
   date: Date;
   evidenceUrl?: string;
   notes?: string;
+  lastUpdated?: Date;
 }
 
 export interface SupportPlan {

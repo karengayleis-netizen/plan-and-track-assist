@@ -9,6 +9,7 @@ import { useMarkbook } from '@/hooks/useMarkbook';
 import { SUBJECTS, STRANDS } from '@/types';
 import { Download, BookOpen, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
+import { freshnessLabel, isStale } from '@/lib/freshness';
 
 export function MarkbookTab() {
   const { students } = useStudents();
@@ -199,6 +200,11 @@ export function MarkbookTab() {
                     {entry.notes && (
                       <p className="text-xs text-muted-foreground mt-2 italic line-clamp-2">{entry.notes}</p>
                     )}
+                    <div className="flex justify-end mt-1">
+                      <span className={`text-xs ${isStale(entry.lastUpdated) ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                        {freshnessLabel(entry.lastUpdated)}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

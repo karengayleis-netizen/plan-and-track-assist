@@ -42,6 +42,7 @@ export function useMarkbook(studentId?: string) {
           id: docSnapshot.id,
           ...data,
           date: data.date?.toDate(),
+          lastUpdated: data.lastUpdated?.toDate() || data.date?.toDate(),
         } as MarkbookEntry;
       });
       setEntries(entriesData);
@@ -63,9 +64,11 @@ export function useMarkbook(studentId?: string) {
     }
 
     try {
+      const now = new Date();
       const docRef = await addDoc(collection(db, 'markbook'), {
         ...validation.data,
-        schoolId: user?.schoolId, // Associate with user's school
+        schoolId: user?.schoolId,
+        lastUpdated: now,
       });
       await fetchEntries();
       return docRef.id;

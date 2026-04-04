@@ -43,6 +43,7 @@ export function useBenchmarks(studentId?: string) {
           ...data,
           date: data.date?.toDate(),
           createdAt: data.createdAt?.toDate(),
+          lastUpdated: data.lastUpdated?.toDate() || data.createdAt?.toDate(),
         } as Benchmark;
       });
       setBenchmarks(benchmarksData);
@@ -64,10 +65,12 @@ export function useBenchmarks(studentId?: string) {
     }
 
     try {
+      const now = new Date();
       const docRef = await addDoc(collection(db, 'benchmarks'), {
         ...validation.data,
-        schoolId: user?.schoolId, // Associate with user's school
-        createdAt: new Date(),
+        schoolId: user?.schoolId,
+        createdAt: now,
+        lastUpdated: now,
       });
       await fetchBenchmarks();
       return docRef.id;

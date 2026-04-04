@@ -14,6 +14,7 @@ import { Search, RefreshCw, Upload, Edit, Trash2, Loader2, AlertCircle } from 'l
 import { toast } from 'sonner';
 import { formatGradeDisplay, parseGradeToNumber } from '@/types/homeroom';
 import { Student } from '@/types';
+import { freshnessLabel, isStale } from '@/lib/freshness';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -548,6 +549,7 @@ export function StudentsTab() {
                   <TableHead>Grade</TableHead>
                   <TableHead>Gender</TableHead>
                   <TableHead>Homeroom</TableHead>
+                  <TableHead>Last Updated</TableHead>
                   <TableHead>Flags</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
@@ -561,6 +563,11 @@ export function StudentsTab() {
                       <TableCell>{student.grade}</TableCell>
                       <TableCell>{student.gender || '—'}</TableCell>
                       <TableCell className="font-mono">{student.homeroom}</TableCell>
+                      <TableCell>
+                        <span className={`text-xs ${isStale(student.lastUpdated) ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                          {freshnessLabel(student.lastUpdated)}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           {student.isFocusStudent && (
@@ -590,7 +597,7 @@ export function StudentsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       {selectedClass ? 'No students in this homeroom yet.' : 'No students added yet.'}
                     </TableCell>
                   </TableRow>

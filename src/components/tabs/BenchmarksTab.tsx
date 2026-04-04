@@ -8,6 +8,7 @@ import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { ASSESSMENT_TYPES } from '@/types';
 import { Download, Calendar, FileText, Upload, Wand2 } from 'lucide-react';
+import { freshnessLabel, isStale } from '@/lib/freshness';
 import { toast } from 'sonner';
 
 import { ImportWizard } from '@/components/benchmarks/ImportWizard';
@@ -238,8 +239,13 @@ export function BenchmarksTab() {
                         {benchmark.date?.toLocaleDateString?.() || 'No date'}
                       </span>
                     </div>
-                    <div className="text-sm text-muted-foreground mt-1">
-                      Score: <span className="font-medium text-primary">{benchmark.score}</span>
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-sm text-muted-foreground">
+                        Score: <span className="font-medium text-primary">{benchmark.score}</span>
+                      </span>
+                      <span className={`text-xs ${isStale(benchmark.lastUpdated) ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                        {freshnessLabel(benchmark.lastUpdated)}
+                      </span>
                     </div>
                   </div>
                 ))}
