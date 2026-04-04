@@ -720,6 +720,15 @@ export function StudentsTab() {
         benchmarks={benchmarks}
         markbookEntries={markbookEntries}
       />
+
+      {/* Bulk Actions */}
+      <BulkActionsBar
+        selectedStudents={selectedStudents}
+        onClearSelection={() => setSelectedIds(new Set())}
+        onUpdateStudents={bulkUpdateStudents}
+        onRefetch={refetch}
+        homerooms={classes.map(c => ({ id: c.id, code: c.code, name: c.name }))}
+      />
     </div>
   );
 }
