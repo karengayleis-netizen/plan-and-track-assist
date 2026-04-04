@@ -9,7 +9,9 @@ import {
   deleteDoc, 
   query, 
   where,
-  DocumentData 
+  DocumentData,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { StaffMember, CreateStaffInput, UpdateStaffInput } from '@/types/staff';
