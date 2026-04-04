@@ -172,13 +172,92 @@ export function buildImportRows(
 
 // ── Error Report CSV ─────────────────────────────────────────────────────────
 
-export function generateErrorReportCSV(rows: ImportRow[]): string {
-  const skipped = rows.filter(r => r.status === 'error' || !r.matchedStudentId);
-  const header = 'Row,StudentNumber,AssessmentType,Score,Date,Status,Reason';
-  const lines = skipped.map(r => {
-    const studentNum = r.matchedStudentNumber || 'Unmatched';
-    const reason = [...r.errors, ...(r.matchedStudentId ? [] : ['No student match'])].join('; ');
-    return [r.rowIndex + 2, studentNum, r.assessmentType, r.score, r.date, r.status, `"${reason}"`].join(',');
+export interface ErrorSummary {
+  totalFailed: number;
+  reasons: { reason: string; count: number }[];
+  failedRows: {
+    rowNumber: number;
+    status: RowStatus;
+    reasons: string[];
+    originalValues: Record<string, string>;
+  }[];
+}
+
+/**
+ * Build a structured error summary from import rows.
+ * Only includes data the user originally uploaded — no internal IDs.
+ */
+export function buildErrorSummary(rows: ImportRow[], headers: string[]): ErrorSummary {
+  const failed = rows.filter(r => r.status === 'error' || r.status === 'warning' || !r.matchedStudentId);
+
+  const reasonCounts: Record<string, number> = {};
+  const failedRows = failed.map(r => {
+    const reasons = [
+      ...r.errors,
+      ...r.warnings,
+      ...(r.matchedStudentId ? [] : ['No matching student found in roster']),
+    ];
+    reasons.forEach(reason => {
+      reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+    });
+
+    // Map raw values back to original column names — no internal IDs exposed
+    const originalValues: Record<string, string> = {};
+    r.rawValues.forEach((val, i) => {
+      if (i < headers.length) {
+        originalValues[headers[i]] = val;
+      }
+    });
+
+    return {
+      rowNumber: r.rowIndex + 2, // +1 for 0-index, +1 for header row
+      status: r.status,
+      reasons,
+      originalValues,
+    };
   });
-  return [header, ...lines].join('\n');
+
+  const reasons = Object.entries(reasonCounts)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return { totalFailed: failed.length, reasons, failedRows };
+}
+
+/**
+ * Generate a downloadable CSV of failed/warning rows.
+ * Includes: Row Number, Status, Reason, and all original CSV columns.
+ * Does NOT include any internal system IDs.
+ */
+export function generateErrorReportCSV(rows: ImportRow[], headers: string[] = []): string {
+  const failed = rows.filter(r => r.status === 'error' || !r.matchedStudentId);
+  if (failed.length === 0) return '';
+
+  // Build header: Row Number | Status | Reason | ...original columns
+  const csvHeaders = ['Row Number', 'Status', 'Reason', ...headers];
+  const csvEscape = (val: string) => {
+    if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  };
+
+  const lines = failed.map(r => {
+    const reasons = [
+      ...r.errors,
+      ...r.warnings,
+      ...(r.matchedStudentId ? [] : ['No matching student found in roster']),
+    ].join('; ');
+
+    const statusLabel = r.status === 'error' ? 'Error' : 'Warning';
+
+    return [
+      String(r.rowIndex + 2),
+      statusLabel,
+      csvEscape(reasons),
+      ...r.rawValues.map(v => csvEscape(v || '')),
+    ].join(',');
+  });
+
+  return [csvHeaders.map(csvEscape).join(','), ...lines].join('\n');
 }
