@@ -42,6 +42,7 @@ export function useMarkbook(studentId?: string) {
           id: docSnapshot.id,
           ...data,
           date: data.date?.toDate(),
+          lastUpdated: data.lastUpdated?.toDate() || data.date?.toDate(),
         } as MarkbookEntry;
       });
       setEntries(entriesData);
