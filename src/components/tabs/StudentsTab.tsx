@@ -272,7 +272,10 @@ export function StudentsTab() {
     }
   };
 
-  // Filter students by selected homeroom
+  const isAdmin = user?.role === 'admin';
+
+  // For teachers: only show students in their assigned homerooms (already filtered by useStudents)
+  // For admins: show all or filter by selected class
   const classStudents = selectedClass 
     ? students.filter(s => s.homeroom === selectedClass.code)
     : students;
