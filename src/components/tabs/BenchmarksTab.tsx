@@ -257,7 +257,7 @@ export function BenchmarksTab() {
         <CardContent className="space-y-3">
           <div className="text-xs text-muted-foreground space-y-1">
             <p>
-              CSV columns: <code className="bg-muted px-1.5 py-0.5 rounded">OEN or StudentNumber</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Type</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Score</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Date</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Notes</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Ref</code>
+              CSV columns: <code className="bg-muted px-1.5 py-0.5 rounded">StudentNumber</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Type</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Score</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Date</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Notes</code>, <code className="bg-muted px-1.5 py-0.5 rounded">Ref</code>
             </p>
             <p className="text-muted-foreground/70">
               Matches by OEN hash first, then falls back to coded student number (e.g., 1AF-3).
