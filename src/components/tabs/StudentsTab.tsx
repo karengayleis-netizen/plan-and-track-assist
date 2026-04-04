@@ -35,6 +35,7 @@ export function StudentsTab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
