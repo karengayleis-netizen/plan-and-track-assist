@@ -212,6 +212,33 @@ export function InsightsTab() {
         </InsightChart>
       </div>
 
+      {/* Tag Distribution */}
+      {tagData.length > 0 && (
+        <InsightChart title="Tag Distribution" description="Students by assigned tags">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={tagData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+              <XAxis
+                type="number"
+                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                axisLine={{ stroke: 'hsl(var(--border))' }}
+                tickLine={false}
+              />
+              <YAxis
+                dataKey="name"
+                type="category"
+                tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                axisLine={false}
+                tickLine={false}
+                width={120}
+              />
+              <Tooltip {...tooltipStyle} />
+              <Bar dataKey="value" name="Students" fill={chartColors.primary} radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </InsightChart>
+      )}
+
       {/* Student Deep Dive */}
       <InsightChart 
         title="Student Deep Dive" 
