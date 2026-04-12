@@ -1,25 +1,31 @@
 
 
-## Copilot Prompt Generator for CSV Transformation
+## Diagnosis: Silent Firestore Permission Error
 
-### What this does
+The `useStudents` hook catches errors silently — the `catch` block sets `setError('Failed to fetch students')` but never logs the actual error to the console. This is why you see `useClasses` logs but nothing about students.
 
-Adds a "Need to transform your export first?" helper to the Import Wizard's Upload step. For each assessment source (Acadience, DIBELS, Knowledgehook), it provides a ready-to-copy prompt that teachers paste into Microsoft Copilot along with their raw export file. Copilot then reshapes the wide-format data into the long-format CSV the import wizard expects.
+The most likely cause is a Firestore security rule issue. Looking at the students rule:
 
-### How it works
+```
+allow read: if isAdmin() && resourceSameSchool() ...
+```
 
-1. **New file: `src/lib/copilotPrompts.ts`** — Contains per-source Copilot prompt templates. Each prompt is a detailed, tested instruction string that tells Copilot exactly how to reshape that source's export (e.g., Acadience wide-to-long with the correct measure mappings: FSF, LNF, PSF, NWF CLS, NWF WWR, ORF WC, Retell, Maze, Reading Composite). Includes the target columns (`Student Number, Measure, Score, Date, Window, Status, Class Name`) and rules like "skip blank scores" and "exclude assessor columns."
+This calls `roleDoc()` which does a `get()` on `user_roles/{uid}`. For **list** queries, Firestore needs to evaluate this for every potential document, which can cause permission failures if the security function calls are too complex or if there's a race condition with token refresh.
 
-2. **New component: `src/components/benchmarks/CopilotPromptHelper.tsx`** — A collapsible card shown on the Upload step. When expanded, it displays the source-specific Copilot prompt in a styled text block with a "Copy to Clipboard" button. Includes a brief 3-step instruction: (1) Open your raw export in Excel, (2) Open Copilot, (3) Paste this prompt, (4) Save the result as CSV and upload here.
+## Plan
 
-3. **Modified: `src/components/benchmarks/UploadStep.tsx`** — Adds the `CopilotPromptHelper` component between the source badge and the file upload area. Only shown for sources that have a transformation prompt (not for `generic_csv`).
+### 1. Add error logging to useStudents
+In `src/hooks/useStudents.ts`, update the `catch` block in `fetchStudents` to log the actual Firestore error to the console (`console.error('[useStudents] Error:', err)`). This will reveal the exact permission error message.
+
+### 2. Add debug logging for student fetch lifecycle
+Add `console.log` statements showing when `fetchStudents` is called, with `user.schoolId` and `user.role`, and the number of documents returned — matching the pattern already used in `useClasses`.
 
 ### Technical details
 
-- **`copilotPrompts.ts`** exports a `getCopilotPrompt(source: ImportSource): string | null` function. Returns `null` for `generic_csv`.
-- The Acadience prompt handles the wide-format with ~90 columns, mapping each measure group (FSF, LNF, PSF, NWF CLS, NWF WWR, ORF WC, ORF Accuracy, Retell, Maze, Reading Composite) into separate rows.
-- DIBELS prompt follows the same pattern with DIBELS-specific column names.
-- Knowledgehook prompt is simpler since exports are closer to long format already.
-- Uses the existing `Collapsible` UI component and a `navigator.clipboard.writeText()` call with a toast confirmation on copy.
-- No external dependencies needed.
+**File:** `src/hooks/useStudents.ts`
+- Line 51: Change `catch {` to `catch (err) {` and add `console.error('[useStudents] Fetch error:', err);`
+- Line 14: Add `console.log('[useStudents] fetchStudents called, schoolId:', user?.schoolId, 'role:', user?.role);`
+- After line 40 (after mapping docs): Add `console.log('[useStudents] Fetched', studentsData.length, 'students');`
+
+This logging will immediately reveal whether the issue is a Firestore permission denial, a missing schoolId, or something else — and we can fix the root cause in the next step.
 
