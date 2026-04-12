@@ -50,7 +50,8 @@ export function useStudents() {
 
       setStudents(studentsData);
       setError(null);
-    } catch {
+    } catch (err) {
+      console.error('[useStudents] Fetch error:', err);
       setError('Failed to fetch students');
     } finally {
       setLoading(false);
