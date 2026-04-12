@@ -39,6 +39,7 @@ export function useStudents() {
           lastUpdated: data.lastUpdated?.toDate() || data.updatedAt?.toDate(),
         } as Student;
       });
+      console.log('[useStudents] Fetched', studentsData.length, 'students');
 
       // For teachers: filter to only students in their assigned homerooms
       if (user?.role === 'teacher' && user?.assignedHomerooms && user.assignedHomerooms.length > 0) {
