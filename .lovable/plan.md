@@ -1,23 +1,29 @@
 
 
-## Add OEN to Edit Student Dialog
+## Answer: Yes, with a small enhancement
 
-The edit dialog currently supports Gender, Focus Student, and High Need toggles but has no OEN input. This change adds an OEN field that hashes the value on save and clears it immediately.
+**Current state**: The import wizard already matches students across the entire school by `stableStudentId` or `studentNumber`. If you upload a whole-school CSV, every row will match to the correct student regardless of homeroom. The `classCode`/`homeroom` column is already recognized by the auto-detection engine (aliases: "class", "homeroom", "section").
 
-### Changes — Single File
+**What's missing**: The matched homeroom/class data from the CSV isn't currently *stored* on the benchmark record or used for validation. It's detected but ignored during import.
 
-**`src/components/tabs/StudentsTab.tsx`**
+## Plan: Whole-School Import Enhancement
 
-1. Add `editOen` state (string, default empty) alongside existing `editGender`, `editFocus`, `editHighNeed`
-2. Reset `editOen` to `''` in `openEditDialog` (never pre-populate — raw OEN is not stored)
-3. In the edit dialog UI, add an OEN input field between the Gender select and the checkbox row:
-   - Label: "OEN (optional — used only for CSV matching)"
-   - Helper text: "Will be hashed for privacy. Raw OEN is never stored."
-   - If `editingStudent.oenHash` already exists, show a small note: "OEN hash already on file"
-4. In `handleSaveEdit`:
-   - If `editOen` is non-empty, hash it with `hashOEN()`, check for duplicates against other students' `oenHash`, then include `oenHash` in the update payload
-   - Clear `editOen` after save
-5. Import `hashOEN` from `@/lib/oenHash`
+### 1. Store class context on imported benchmarks
+- When the CSV includes a `classCode`/`homeroom` column, save it on the benchmark document so it's queryable later.
+- Cross-validate: if the student's rostered homeroom differs from the CSV's homeroom column, surface a warning (e.g., "Student 2AF-03 is in homeroom 2AF but CSV says 3BG") — helps catch stale data.
 
-No other files need changes — the `updateStudent` hook and `Student` type already support `oenHash`.
+### 2. Add import summary grouped by class
+- After import, show a breakdown in the Results step: how many rows imported per homeroom (e.g., "2AF: 12 students, 45E: 8 students, Unmatched: 3").
+- This gives teachers confidence the whole-school file routed correctly.
+
+### 3. Add homeroom filter to Preview step
+- In the Preview/Validate step, add a dropdown to filter rows by detected homeroom so teachers can spot-check one class at a time before confirming.
+
+### Technical details
+
+**Files to modify:**
+- `src/hooks/useImportWizard.ts` — store `classCode` from CSV on benchmark docs; build per-homeroom summary in results.
+- `src/components/benchmarks/PreviewStep.tsx` — add homeroom filter dropdown.
+- `src/components/benchmarks/ResultsStep.tsx` — display per-class import breakdown.
+- `src/types/importWizard.ts` — add `matchedHomeroom` and `csvHomeroom` to `ImportRow`; add `classSummary` to `ImportResult`.
 
