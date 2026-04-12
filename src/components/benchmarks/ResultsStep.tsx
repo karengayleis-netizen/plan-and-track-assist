@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ImportResult, ImportRow } from '@/types/importWizard';
 import type { ErrorSummary } from '@/lib/csvParser';
-import { CheckCircle2, AlertTriangle, Download, Save, FileWarning, XCircle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, Save, FileWarning, XCircle, School } from 'lucide-react';
 
 interface ResultsStepProps {
   result: ImportResult;
@@ -43,6 +43,25 @@ export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSa
           </div>
         ))}
       </div>
+
+      {/* Per-Class Breakdown */}
+      {result.classSummary && Object.keys(result.classSummary).length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium flex items-center gap-1.5">
+            <School className="h-4 w-4 text-primary" />
+            Import by homeroom
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(result.classSummary)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([homeroom, count]) => (
+                <Badge key={homeroom} variant="secondary" className="text-xs px-2.5 py-1">
+                  {homeroom}: {count} row{count !== 1 ? 's' : ''}
+                </Badge>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Error Reason Breakdown */}
       {hasErrors && errorSummary.reasons.length > 0 && (

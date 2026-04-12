@@ -1,8 +1,10 @@
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { ImportRow } from '@/types/importWizard';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Filter } from 'lucide-react';
 
 interface PreviewStepProps {
   rows: ImportRow[];
@@ -18,6 +20,24 @@ const statusColors: Record<string, string> = {
 };
 
 export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepProps) {
+  const [homeroomFilter, setHomeroomFilter] = useState<string>('all');
+
+  // Collect unique homerooms from rows
+  const homerooms = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach(r => {
+      const hr = r.matchedHomeroom || r.csvHomeroom;
+      if (hr) set.add(hr);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    if (homeroomFilter === 'all') return rows;
+    if (homeroomFilter === 'unassigned') return rows.filter(r => !r.matchedHomeroom && !r.csvHomeroom);
+    return rows.filter(r => (r.matchedHomeroom || r.csvHomeroom) === homeroomFilter);
+  }, [rows, homeroomFilter]);
+
   const readyCount = rows.filter(r => r.status === 'ready' && r.matchedStudentId).length;
   const warningCount = rows.filter(r => r.status === 'warning').length;
   const errorCount = rows.filter(r => r.status === 'error').length;
@@ -40,6 +60,26 @@ export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepPr
         ))}
       </div>
 
+      {/* Homeroom Filter */}
+      {homerooms.length > 0 && (
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select value={homeroomFilter} onValueChange={setHomeroomFilter}>
+            <SelectTrigger className="w-[200px] h-8 text-sm">
+              <SelectValue placeholder="Filter by homeroom" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All homerooms ({rows.length})</SelectItem>
+              {homerooms.map(hr => {
+                const count = rows.filter(r => (r.matchedHomeroom || r.csvHomeroom) === hr).length;
+                return <SelectItem key={hr} value={hr}>{hr} ({count})</SelectItem>;
+              })}
+              <SelectItem value="unassigned">No homeroom</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Preview Table */}
       <div className="border rounded-lg overflow-auto max-h-[40vh]">
         <Table>
@@ -47,6 +87,7 @@ export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepPr
             <TableRow>
               <TableHead className="w-12">#</TableHead>
               <TableHead>Student</TableHead>
+              {homerooms.length > 0 && <TableHead>Homeroom</TableHead>}
               <TableHead>Assessment</TableHead>
               <TableHead>Score</TableHead>
               <TableHead>Date</TableHead>
@@ -54,7 +95,7 @@ export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepPr
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.slice(0, 10).map(row => (
+            {filteredRows.slice(0, 10).map(row => (
               <TableRow key={row.rowIndex}>
                 <TableCell className="text-xs text-muted-foreground">{row.rowIndex + 1}</TableCell>
                 <TableCell className="text-sm">
@@ -63,6 +104,16 @@ export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepPr
                     : <span className="text-muted-foreground italic">Unmatched</span>
                   }
                 </TableCell>
+                {homerooms.length > 0 && (
+                  <TableCell className="text-sm">
+                    {row.matchedHomeroom || row.csvHomeroom || <span className="text-muted-foreground">—</span>}
+                    {row.csvHomeroom && row.matchedHomeroom && row.csvHomeroom !== row.matchedHomeroom && (
+                      <Badge variant="outline" className="ml-1 text-[9px] bg-yellow-500/10 text-yellow-700 border-yellow-500/30">
+                        mismatch
+                      </Badge>
+                    )}
+                  </TableCell>
+                )}
                 <TableCell className="text-sm">{row.assessmentType}</TableCell>
                 <TableCell className="text-sm font-medium">{row.score}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{row.date || 'Today'}</TableCell>
@@ -77,9 +128,9 @@ export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepPr
         </Table>
       </div>
 
-      {rows.length > 10 && (
+      {filteredRows.length > 10 && (
         <p className="text-xs text-muted-foreground text-center">
-          Showing first 10 of {rows.length} rows
+          Showing first 10 of {filteredRows.length} rows
         </p>
       )}
 
