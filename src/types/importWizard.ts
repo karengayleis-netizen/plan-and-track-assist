@@ -52,6 +52,8 @@ export interface ImportRow {
   matchedStudentId?: string;
   matchedStudentNumber?: string;
   matchedStudentInitials?: string;
+  csvHomeroom?: string;
+  matchedHomeroom?: string;
   assessmentType: string;
   score: string;
   date: string;
@@ -64,6 +66,7 @@ export interface ImportResult {
   skippedRows: number;
   unmatchedRows: number;
   errorRows: number;
+  classSummary?: Record<string, number>;
 }
 
 export interface NormalizedBenchmark {
