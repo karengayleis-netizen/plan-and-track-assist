@@ -97,24 +97,39 @@ export function useImportWizard(onComplete?: () => void) {
       const identifierIdx = state.columnMapping.studentIdentifier;
       const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx]?.trim() : '';
 
-      if (!rawIdentifier) return row;
+      // Extract CSV homeroom if mapped
+      const classCodeIdx = state.columnMapping.classCode;
+      const csvHomeroom = classCodeIdx >= 0 ? row.rawValues[classCodeIdx]?.trim() || '' : '';
+
+      if (!rawIdentifier) return { ...row, csvHomeroom: csvHomeroom || undefined };
 
       // Match by stableStudentId first, then fallback to studentNumber
       const student = students.find(s => s.stableStudentId === rawIdentifier)
         || students.find(s => s.studentNumber === rawIdentifier);
 
       if (student) {
+        const matchedHomeroom = student.homeroom || '';
+        const homeroomMismatch = csvHomeroom && matchedHomeroom && csvHomeroom !== matchedHomeroom;
+        const warnings = [...row.warnings];
+        if (homeroomMismatch) {
+          warnings.push(`Homeroom mismatch: CSV says "${csvHomeroom}" but student is in "${matchedHomeroom}"`);
+        }
+
         return {
           ...row,
           matchedStudentId: student.id,
           matchedStudentNumber: student.studentNumber,
           matchedStudentInitials: student.initials || `${student.firstName?.[0] || ''}${student.lastName?.[0] || ''}`,
-          status: row.status === 'error' ? 'error' as const : row.status,
+          csvHomeroom: csvHomeroom || undefined,
+          matchedHomeroom: matchedHomeroom || undefined,
+          status: row.status === 'error' ? 'error' as const : (homeroomMismatch ? 'warning' as const : row.status),
+          warnings,
         };
       }
 
       return {
         ...row,
+        csvHomeroom: csvHomeroom || undefined,
         status: row.errors.length > 0 ? 'error' as const : 'warning' as const,
         warnings: [...row.warnings, 'No student match found'],
       };
@@ -141,6 +156,8 @@ export function useImportWizard(onComplete?: () => void) {
       }
     }
 
+    const classSummary: Record<string, number> = {};
+
     for (const row of validRows) {
       try {
         const m = state.columnMapping;
@@ -149,6 +166,8 @@ export function useImportWizard(onComplete?: () => void) {
 
         const percentStr = getVal('percent');
         const percentVal = percentStr ? parseFloat(percentStr) : undefined;
+
+        const classCode = row.csvHomeroom || getVal('classCode') || '';
 
         await addDoc(collection(db, 'benchmarks'), {
           schoolId: user.schoolId || '',
@@ -167,6 +186,7 @@ export function useImportWizard(onComplete?: () => void) {
           percentage: percentVal || 0,
           benchmarkWindow: getVal('benchmarkWindow') || undefined,
           strand: getVal('strand') || undefined,
+          classCode: classCode || undefined,
           subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
           date: row.parsedDate || new Date(),
           term: getVal('benchmarkWindow') || '',
@@ -182,6 +202,10 @@ export function useImportWizard(onComplete?: () => void) {
           createdAt: new Date(),
         });
         importedCount++;
+
+        // Track per-class summary
+        const summaryKey = row.matchedHomeroom || classCode || 'Unknown';
+        classSummary[summaryKey] = (classSummary[summaryKey] || 0) + 1;
       } catch {
         errorCount++;
       }
@@ -194,6 +218,7 @@ export function useImportWizard(onComplete?: () => void) {
       skippedRows: state.importRows.length - validRows.length,
       unmatchedRows: unmatchedCount,
       errorRows: errorCount,
+      classSummary: Object.keys(classSummary).length > 0 ? classSummary : undefined,
     };
 
     try {
