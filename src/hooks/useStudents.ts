@@ -12,6 +12,7 @@ export function useStudents() {
   const { user } = useAuth();
 
   const fetchStudents = async () => {
+    console.log('[useStudents] fetchStudents called, schoolId:', user?.schoolId, 'role:', user?.role);
     try {
       setLoading(true);
       
@@ -38,6 +39,7 @@ export function useStudents() {
           lastUpdated: data.lastUpdated?.toDate() || data.updatedAt?.toDate(),
         } as Student;
       });
+      console.log('[useStudents] Fetched', studentsData.length, 'students');
 
       // For teachers: filter to only students in their assigned homerooms
       if (user?.role === 'teacher' && user?.assignedHomerooms && user.assignedHomerooms.length > 0) {
@@ -48,7 +50,8 @@ export function useStudents() {
 
       setStudents(studentsData);
       setError(null);
-    } catch {
+    } catch (err) {
+      console.error('[useStudents] Fetch error:', err);
       setError('Failed to fetch students');
     } finally {
       setLoading(false);
