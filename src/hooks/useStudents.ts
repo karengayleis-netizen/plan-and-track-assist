@@ -12,6 +12,7 @@ export function useStudents() {
   const { user } = useAuth();
 
   const fetchStudents = async () => {
+    console.log('[useStudents] fetchStudents called, schoolId:', user?.schoolId, 'role:', user?.role);
     try {
       setLoading(true);
       
