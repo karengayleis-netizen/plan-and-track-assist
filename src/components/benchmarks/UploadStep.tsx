@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { getPreset } from '@/lib/importPresets';
 import type { ImportSource, ImportTemplate } from '@/types/importWizard';
 import { Upload, ArrowLeft, FileText } from 'lucide-react';
+import { CopilotPromptHelper } from './CopilotPromptHelper';
 
 interface UploadStepProps {
   source: ImportSource;
