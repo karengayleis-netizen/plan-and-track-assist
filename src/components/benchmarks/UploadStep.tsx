@@ -39,6 +39,8 @@ export function UploadStep({ source, onUpload, onBack, templates, onLoadTemplate
         <span>— {preset.assessmentFamily} assessment</span>
       </div>
 
+      <CopilotPromptHelper source={source} />
+
       <Card className="border-dashed border-2 border-border/50">
         <CardContent className="p-6 flex flex-col items-center gap-3">
           <Upload className="h-8 w-8 text-muted-foreground" />
