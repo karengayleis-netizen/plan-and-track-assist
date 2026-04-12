@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { getPreset } from '@/lib/importPresets';
 import type { ImportSource, ImportTemplate } from '@/types/importWizard';
 import { Upload, ArrowLeft, FileText } from 'lucide-react';
+import { CopilotPromptHelper } from './CopilotPromptHelper';
 
 interface UploadStepProps {
   source: ImportSource;
@@ -37,6 +38,8 @@ export function UploadStep({ source, onUpload, onBack, templates, onLoadTemplate
         </span>
         <span>— {preset.assessmentFamily} assessment</span>
       </div>
+
+      <CopilotPromptHelper source={source} />
 
       <Card className="border-dashed border-2 border-border/50">
         <CardContent className="p-6 flex flex-col items-center gap-3">
