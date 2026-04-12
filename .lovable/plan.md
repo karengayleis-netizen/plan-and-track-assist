@@ -1,29 +1,25 @@
 
 
-## Answer: Yes, with a small enhancement
+## Copilot Prompt Generator for CSV Transformation
 
-**Current state**: The import wizard already matches students across the entire school by `stableStudentId` or `studentNumber`. If you upload a whole-school CSV, every row will match to the correct student regardless of homeroom. The `classCode`/`homeroom` column is already recognized by the auto-detection engine (aliases: "class", "homeroom", "section").
+### What this does
 
-**What's missing**: The matched homeroom/class data from the CSV isn't currently *stored* on the benchmark record or used for validation. It's detected but ignored during import.
+Adds a "Need to transform your export first?" helper to the Import Wizard's Upload step. For each assessment source (Acadience, DIBELS, Knowledgehook), it provides a ready-to-copy prompt that teachers paste into Microsoft Copilot along with their raw export file. Copilot then reshapes the wide-format data into the long-format CSV the import wizard expects.
 
-## Plan: Whole-School Import Enhancement
+### How it works
 
-### 1. Store class context on imported benchmarks
-- When the CSV includes a `classCode`/`homeroom` column, save it on the benchmark document so it's queryable later.
-- Cross-validate: if the student's rostered homeroom differs from the CSV's homeroom column, surface a warning (e.g., "Student 2AF-03 is in homeroom 2AF but CSV says 3BG") — helps catch stale data.
+1. **New file: `src/lib/copilotPrompts.ts`** — Contains per-source Copilot prompt templates. Each prompt is a detailed, tested instruction string that tells Copilot exactly how to reshape that source's export (e.g., Acadience wide-to-long with the correct measure mappings: FSF, LNF, PSF, NWF CLS, NWF WWR, ORF WC, Retell, Maze, Reading Composite). Includes the target columns (`Student Number, Measure, Score, Date, Window, Status, Class Name`) and rules like "skip blank scores" and "exclude assessor columns."
 
-### 2. Add import summary grouped by class
-- After import, show a breakdown in the Results step: how many rows imported per homeroom (e.g., "2AF: 12 students, 45E: 8 students, Unmatched: 3").
-- This gives teachers confidence the whole-school file routed correctly.
+2. **New component: `src/components/benchmarks/CopilotPromptHelper.tsx`** — A collapsible card shown on the Upload step. When expanded, it displays the source-specific Copilot prompt in a styled text block with a "Copy to Clipboard" button. Includes a brief 3-step instruction: (1) Open your raw export in Excel, (2) Open Copilot, (3) Paste this prompt, (4) Save the result as CSV and upload here.
 
-### 3. Add homeroom filter to Preview step
-- In the Preview/Validate step, add a dropdown to filter rows by detected homeroom so teachers can spot-check one class at a time before confirming.
+3. **Modified: `src/components/benchmarks/UploadStep.tsx`** — Adds the `CopilotPromptHelper` component between the source badge and the file upload area. Only shown for sources that have a transformation prompt (not for `generic_csv`).
 
 ### Technical details
 
-**Files to modify:**
-- `src/hooks/useImportWizard.ts` — store `classCode` from CSV on benchmark docs; build per-homeroom summary in results.
-- `src/components/benchmarks/PreviewStep.tsx` — add homeroom filter dropdown.
-- `src/components/benchmarks/ResultsStep.tsx` — display per-class import breakdown.
-- `src/types/importWizard.ts` — add `matchedHomeroom` and `csvHomeroom` to `ImportRow`; add `classSummary` to `ImportResult`.
+- **`copilotPrompts.ts`** exports a `getCopilotPrompt(source: ImportSource): string | null` function. Returns `null` for `generic_csv`.
+- The Acadience prompt handles the wide-format with ~90 columns, mapping each measure group (FSF, LNF, PSF, NWF CLS, NWF WWR, ORF WC, ORF Accuracy, Retell, Maze, Reading Composite) into separate rows.
+- DIBELS prompt follows the same pattern with DIBELS-specific column names.
+- Knowledgehook prompt is simpler since exports are closer to long format already.
+- Uses the existing `Collapsible` UI component and a `navigator.clipboard.writeText()` call with a toast confirmation on copy.
+- No external dependencies needed.
 
