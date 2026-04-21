@@ -134,10 +134,10 @@ export function useStudents() {
   };
 
   useEffect(() => {
-    if (user) {
+    if (user?.schoolId) {
       fetchStudents();
     }
-  }, [user?.schoolId]);
+  }, [user?.schoolId, user?.role]);
 
   return { students, loading, error, addStudent, updateStudent, deleteStudent, refetch: fetchStudents };
 }
