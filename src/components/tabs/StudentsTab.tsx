@@ -630,6 +630,7 @@ export function StudentsTab() {
                     />
                   </TableHead>
                   <TableHead>Student #</TableHead>
+                  <TableHead>Board #</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Grade</TableHead>
                   <TableHead>Gender</TableHead>
@@ -657,6 +658,7 @@ export function StudentsTab() {
                         />
                       </TableCell>
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{student.externalStudentNumber || '—'}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
                       <TableCell>{student.gender || '—'}</TableCell>
