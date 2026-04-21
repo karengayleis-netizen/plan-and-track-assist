@@ -133,14 +133,15 @@ export function StudentsTab() {
 
         const values = parseCSVLine(line);
         
-        // Expected format: StudentNumber, Initials, Grade, Gender (Gender optional)
+        // Expected format: StudentNumber, Initials, Grade, Gender, ExternalStudentNumber
+        // (Gender + ExternalStudentNumber optional)
         if (values.length < 3) {
           errors.push(`Row ${i + 1}: Expected at least 3 columns (StudentNumber, Initials, Grade), got ${values.length}`);
           errorCount++;
           continue;
         }
 
-        const [number, studentInitials, gradeStr, genderStr] = values;
+        const [number, studentInitials, gradeStr, genderStr, externalNumStr] = values;
         
         // Validate grade against homeroom
         const gradeValidation = validateGradeForHomeroom(gradeStr, selectedClass);
@@ -153,11 +154,26 @@ export function StudentsTab() {
         // Generate coded student number: homeroom-number (e.g., "2AF-1")
         const codedStudentNumber = `${selectedClass.code}-${number.trim()}`;
         const stableId = `${selectedClass.code}-${number.trim()}`.trim();
-        
+        const externalNumber = externalNumStr?.trim() || '';
+
         try {
+          // Check if student already exists — update externalStudentNumber instead of duplicate-error
+          const existing = students.find(s => s.stableStudentId === stableId);
+          if (existing) {
+            if (externalNumber && existing.externalStudentNumber !== externalNumber) {
+              await updateStudent(existing.id, { externalStudentNumber: externalNumber });
+              successCount++;
+            } else {
+              errors.push(`Row ${i + 1}: ${codedStudentNumber} already exists (no changes)`);
+              errorCount++;
+            }
+            continue;
+          }
+
           await addStudent({
             stableStudentId: stableId,
             studentNumber: codedStudentNumber,
+            externalStudentNumber: externalNumber || undefined,
             initials: studentInitials.trim(),
             firstName: '',
             lastName: '',
