@@ -378,7 +378,7 @@ export function StudentsTab() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
-              CSV: StudentNumber, Initials, Grade, Gender
+              CSV: StudentNumber, Initials, Grade, Gender, ExternalStudentNumber
             </p>
           </div>
         </CardHeader>
@@ -434,12 +434,12 @@ export function StudentsTab() {
                 </h4>
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
-                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender</code>
+                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender, ExternalStudentNumber</code>
                   </p>
                   <p>
-                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
+                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M, 1027516</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
                   </p>
-                  <p className="text-muted-foreground/70">Gender column is optional.</p>
+                  <p className="text-muted-foreground/70">Gender and ExternalStudentNumber are optional. Re-uploading with an ExternalStudentNumber will backfill it on existing students.</p>
                   {selectedClass && (
                     <p className="text-primary">
                       ✓ Allowed grades for {selectedClass.code}: {selectedClass.allowedGrades.map(g => formatGradeDisplay(g)).join(', ')}
@@ -726,6 +726,20 @@ export function StudentsTab() {
             <DialogTitle>Edit Student {editingStudent?.studentNumber}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="editExternalNumber">External / Board Student # (from SIS)</Label>
+              <Input
+                id="editExternalNumber"
+                placeholder="e.g. 1027516"
+                value={editExternalNumber}
+                onChange={(e) => setEditExternalNumber(e.target.value)}
+                className="mt-1 font-mono"
+                disabled={!isAdmin}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Used to match Acadience / DIBELS imports. {!isAdmin && '(Admin only)'}
+              </p>
+            </div>
             <div>
               <Label>Gender</Label>
               <Select value={editGender} onValueChange={setEditGender}>
