@@ -12,6 +12,10 @@ export function useBenchmarks(studentId?: string) {
   const { user } = useAuth();
 
   const fetchBenchmarks = async () => {
+    if (!studentId && !user?.schoolId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       
