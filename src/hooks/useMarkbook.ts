@@ -83,7 +83,7 @@ export function useMarkbook(studentId?: string) {
   };
 
   useEffect(() => {
-    if (user) {
+    if (studentId || user?.schoolId) {
       fetchEntries();
     }
   }, [studentId, user?.schoolId]);
