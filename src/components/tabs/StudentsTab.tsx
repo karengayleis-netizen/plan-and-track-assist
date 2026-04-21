@@ -33,6 +33,7 @@ export function StudentsTab() {
   const [editHighNeed, setEditHighNeed] = useState(false);
   const [editGender, setEditGender] = useState('');
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [editExternalNumber, setEditExternalNumber] = useState('');
   const { classes, loading: classesLoading, getClassByCode } = useClasses();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,6 +270,7 @@ export function StudentsTab() {
     setEditHighNeed(student.isHighNeed);
     setEditGender(student.gender || '');
     setEditTags(student.tags || []);
+    setEditExternalNumber(student.externalStudentNumber || '');
   };
 
   const handleSaveEdit = async () => {
@@ -279,6 +281,7 @@ export function StudentsTab() {
         isHighNeed: editHighNeed,
         gender: editGender,
         tags: editTags,
+        externalStudentNumber: editExternalNumber.trim() || undefined,
       };
 
       await updateStudent(editingStudent.id, updates);
