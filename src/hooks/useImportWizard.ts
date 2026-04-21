@@ -93,9 +93,18 @@ export function useImportWizard(onComplete?: () => void) {
     // Build rows + match students by studentNumber
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
+    // Normalize identifier: trim, strip leading zeros (for numeric IDs)
+    const normalize = (v: string | undefined): string => {
+      if (!v) return '';
+      const trimmed = v.trim();
+      if (/^\d+$/.test(trimmed)) return trimmed.replace(/^0+/, '') || '0';
+      return trimmed;
+    };
+
     const matched = rows.map((row) => {
       const identifierIdx = state.columnMapping.studentIdentifier;
       const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx]?.trim() : '';
+      const normIdentifier = normalize(rawIdentifier);
 
       // Extract CSV homeroom if mapped
       const classCodeIdx = state.columnMapping.classCode;
@@ -103,9 +112,10 @@ export function useImportWizard(onComplete?: () => void) {
 
       if (!rawIdentifier) return { ...row, csvHomeroom: csvHomeroom || undefined };
 
-      // Match by stableStudentId first, then fallback to studentNumber
-      const student = students.find(s => s.stableStudentId === rawIdentifier)
-        || students.find(s => s.studentNumber === rawIdentifier);
+      // 3-tier match: stableStudentId → studentNumber → externalStudentNumber
+      const student = students.find(s => normalize(s.stableStudentId) === normIdentifier)
+        || students.find(s => normalize(s.studentNumber) === normIdentifier)
+        || students.find(s => normalize(s.externalStudentNumber) === normIdentifier);
 
       if (student) {
         const matchedHomeroom = student.homeroom || '';
