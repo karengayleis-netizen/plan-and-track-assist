@@ -1,31 +1,34 @@
 
 
-## Diagnosis: Silent Firestore Permission Error
+## Fix: Don't query Firestore until auth is fully resolved
 
-The `useStudents` hook catches errors silently — the `catch` block sets `setError('Failed to fetch students')` but never logs the actual error to the console. This is why you see `useClasses` logs but nothing about students.
+### Root cause
+`useAuth` sets a placeholder user with `role: 'teacher'` and no `schoolId` the instant Firebase Auth fires, then asynchronously fetches the real role and `schoolId`. Hooks like `useStudents` listen on `user?.schoolId` and fire immediately against the placeholder — producing a guaranteed `Missing or insufficient permissions` error on every login before the real values arrive and a second (successful) query runs.
 
-The most likely cause is a Firestore security rule issue. Looking at the students rule:
+The data eventually loads (252 students confirmed), but every sign-in throws a scary console error and wastes a Firestore round-trip.
 
-```
-allow read: if isAdmin() && resourceSameSchool() ...
-```
+### What changes
 
-This calls `roleDoc()` which does a `get()` on `user_roles/{uid}`. For **list** queries, Firestore needs to evaluate this for every potential document, which can cause permission failures if the security function calls are too complex or if there's a race condition with token refresh.
+**1. `src/hooks/useAuth.tsx` — Stop publishing the placeholder user**
+Remove the immediate `setUser({ ...placeholder, role: 'teacher' })` call inside `onAuthStateChanged`. Keep `loading: true` until the async block finishes resolving role + `schoolId`, then publish the fully-hydrated user in a single `setUser` call. This guarantees consumers never see a half-built user object.
 
-## Plan
+**2. `src/hooks/useStudents.ts` — Guard against missing `schoolId`**
+Defensive belt-and-suspenders: in `fetchStudents`, early-return (without setting an error) if `!user?.schoolId`. Also update the `useEffect` dependency to `[user?.schoolId, user?.role]` and skip the fetch entirely when `schoolId` is falsy. This prevents any future code path from triggering the same race.
 
-### 1. Add error logging to useStudents
-In `src/hooks/useStudents.ts`, update the `catch` block in `fetchStudents` to log the actual Firestore error to the console (`console.error('[useStudents] Error:', err)`). This will reveal the exact permission error message.
+**3. Apply the same guard to `useClasses`, `useBenchmarks`, `useMarkbook`, `useStaff`** (quick audit — most already gate on `schoolId`, but confirm and patch any that don't).
 
-### 2. Add debug logging for student fetch lifecycle
-Add `console.log` statements showing when `fetchStudents` is called, with `user.schoolId` and `user.role`, and the number of documents returned — matching the pattern already used in `useClasses`.
+### Why not just suppress the error?
+The placeholder user is the actual bug — it briefly tells the entire app "you are a teacher with no school," which could trigger wrong UI flashes (e.g., teacher-only views, empty states) beyond just the Firestore error. Removing it fixes the root cause.
 
 ### Technical details
 
-**File:** `src/hooks/useStudents.ts`
-- Line 51: Change `catch {` to `catch (err) {` and add `console.error('[useStudents] Fetch error:', err);`
-- Line 14: Add `console.log('[useStudents] fetchStudents called, schoolId:', user?.schoolId, 'role:', user?.role);`
-- After line 40 (after mapping docs): Add `console.log('[useStudents] Fetched', studentsData.length, 'students');`
+- `useAuth.tsx`: delete lines that call `setUser({ uid, email, displayName, role: 'teacher' })` before the `setTimeout`. Keep `loading` true throughout the async resolve. The existing `<Loader2>` spinner in `Dashboard.tsx` already covers this loading window, so users see a brief spinner instead of a flash of empty state.
+- `useStudents.ts`: add `if (!user?.schoolId) { setLoading(false); return; }` at the top of `fetchStudents`. Change the effect to `useEffect(() => { if (user?.schoolId) fetchStudents(); }, [user?.schoolId])`.
+- No security rule changes needed — rules are correct; the client was just sending bad queries.
+- No changes to the CSV import flow or the Acadience-ready file you uploaded — that's a separate workstream.
 
-This logging will immediately reveal whether the issue is a Firestore permission denial, a missing schoolId, or something else — and we can fix the root cause in the next step.
+### Expected result
+- Clean console on login (no permission errors).
+- One Firestore query per collection per login instead of two.
+- No UI flash of teacher-mode views for admin users.
 
