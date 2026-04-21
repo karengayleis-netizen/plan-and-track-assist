@@ -12,6 +12,10 @@ export function useMarkbook(studentId?: string) {
   const { user } = useAuth();
 
   const fetchEntries = async () => {
+    if (!studentId && !user?.schoolId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       
