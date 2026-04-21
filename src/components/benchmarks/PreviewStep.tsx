@@ -45,6 +45,17 @@ export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepPr
 
   return (
     <div className="space-y-4">
+      {/* No-match diagnostic banner */}
+      {readyCount === 0 && rows.length > 0 && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+          <p className="font-medium text-destructive mb-1">No students matched — nothing will import</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Your CSV likely uses board / SIS student numbers (e.g. <code className="px-1 bg-muted rounded">1027516</code>) but your roster uses coded IDs (e.g. <code className="px-1 bg-muted rounded">2AF-03</code>).
+            Backfill the <strong>External Student Number</strong> on each student via the Students tab (CSV upload or Edit), then re-run this import.
+          </p>
+        </div>
+      )}
+
       {/* Summary */}
       <div className="grid grid-cols-4 gap-2">
         {[

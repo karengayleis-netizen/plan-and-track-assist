@@ -33,6 +33,7 @@ export function StudentsTab() {
   const [editHighNeed, setEditHighNeed] = useState(false);
   const [editGender, setEditGender] = useState('');
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [editExternalNumber, setEditExternalNumber] = useState('');
   const { classes, loading: classesLoading, getClassByCode } = useClasses();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,14 +133,15 @@ export function StudentsTab() {
 
         const values = parseCSVLine(line);
         
-        // Expected format: StudentNumber, Initials, Grade, Gender (Gender optional)
+        // Expected format: StudentNumber, Initials, Grade, Gender, ExternalStudentNumber
+        // (Gender + ExternalStudentNumber optional)
         if (values.length < 3) {
           errors.push(`Row ${i + 1}: Expected at least 3 columns (StudentNumber, Initials, Grade), got ${values.length}`);
           errorCount++;
           continue;
         }
 
-        const [number, studentInitials, gradeStr, genderStr] = values;
+        const [number, studentInitials, gradeStr, genderStr, externalNumStr] = values;
         
         // Validate grade against homeroom
         const gradeValidation = validateGradeForHomeroom(gradeStr, selectedClass);
@@ -152,11 +154,26 @@ export function StudentsTab() {
         // Generate coded student number: homeroom-number (e.g., "2AF-1")
         const codedStudentNumber = `${selectedClass.code}-${number.trim()}`;
         const stableId = `${selectedClass.code}-${number.trim()}`.trim();
-        
+        const externalNumber = externalNumStr?.trim() || '';
+
         try {
+          // Check if student already exists — update externalStudentNumber instead of duplicate-error
+          const existing = students.find(s => s.stableStudentId === stableId);
+          if (existing) {
+            if (externalNumber && existing.externalStudentNumber !== externalNumber) {
+              await updateStudent(existing.id, { externalStudentNumber: externalNumber });
+              successCount++;
+            } else {
+              errors.push(`Row ${i + 1}: ${codedStudentNumber} already exists (no changes)`);
+              errorCount++;
+            }
+            continue;
+          }
+
           await addStudent({
             stableStudentId: stableId,
             studentNumber: codedStudentNumber,
+            externalStudentNumber: externalNumber || undefined,
             initials: studentInitials.trim(),
             firstName: '',
             lastName: '',
@@ -269,6 +286,7 @@ export function StudentsTab() {
     setEditHighNeed(student.isHighNeed);
     setEditGender(student.gender || '');
     setEditTags(student.tags || []);
+    setEditExternalNumber(student.externalStudentNumber || '');
   };
 
   const handleSaveEdit = async () => {
@@ -279,6 +297,7 @@ export function StudentsTab() {
         isHighNeed: editHighNeed,
         gender: editGender,
         tags: editTags,
+        externalStudentNumber: editExternalNumber.trim() || undefined,
       };
 
       await updateStudent(editingStudent.id, updates);
@@ -359,7 +378,7 @@ export function StudentsTab() {
               </p>
             </div>
             <p className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
-              CSV: StudentNumber, Initials, Grade, Gender
+              CSV: StudentNumber, Initials, Grade, Gender, ExternalStudentNumber
             </p>
           </div>
         </CardHeader>
@@ -415,12 +434,12 @@ export function StudentsTab() {
                 </h4>
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
-                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender</code>
+                    CSV format: <code className="bg-muted px-1 rounded">StudentNumber, Initials, Grade, Gender, ExternalStudentNumber</code>
                   </p>
                   <p>
-                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
+                    Example: <code className="bg-muted px-1 rounded">1, JD, 4, M, 1027516</code> → becomes <code className="bg-muted px-1 rounded">{selectedClass?.code || 'homeroom'}-1</code>
                   </p>
-                  <p className="text-muted-foreground/70">Gender column is optional.</p>
+                  <p className="text-muted-foreground/70">Gender and ExternalStudentNumber are optional. Re-uploading with an ExternalStudentNumber will backfill it on existing students.</p>
                   {selectedClass && (
                     <p className="text-primary">
                       ✓ Allowed grades for {selectedClass.code}: {selectedClass.allowedGrades.map(g => formatGradeDisplay(g)).join(', ')}
@@ -611,6 +630,7 @@ export function StudentsTab() {
                     />
                   </TableHead>
                   <TableHead>Student #</TableHead>
+                  <TableHead>Board #</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Grade</TableHead>
                   <TableHead>Gender</TableHead>
@@ -638,6 +658,7 @@ export function StudentsTab() {
                         />
                       </TableCell>
                       <TableCell className="font-mono font-medium">{student.studentNumber}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{student.externalStudentNumber || '—'}</TableCell>
                       <TableCell>{student.initials}</TableCell>
                       <TableCell>{student.grade}</TableCell>
                       <TableCell>{student.gender || '—'}</TableCell>
@@ -685,7 +706,7 @@ export function StudentsTab() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground py-8">
                       {selectedClass ? 'No students in this homeroom yet.' : 'No students added yet.'}
                     </TableCell>
                   </TableRow>
@@ -707,6 +728,20 @@ export function StudentsTab() {
             <DialogTitle>Edit Student {editingStudent?.studentNumber}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="editExternalNumber">External / Board Student # (from SIS)</Label>
+              <Input
+                id="editExternalNumber"
+                placeholder="e.g. 1027516"
+                value={editExternalNumber}
+                onChange={(e) => setEditExternalNumber(e.target.value)}
+                className="mt-1 font-mono"
+                disabled={!isAdmin}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Used to match Acadience / DIBELS imports. {!isAdmin && '(Admin only)'}
+              </p>
+            </div>
             <div>
               <Label>Gender</Label>
               <Select value={editGender} onValueChange={setEditGender}>
