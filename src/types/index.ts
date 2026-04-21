@@ -17,6 +17,7 @@ export interface Student {
   id: string;
   stableStudentId: string;
   studentNumber: string;
+  externalStudentNumber?: string;
   initials: string;
   firstName: string;
   lastName: string;
