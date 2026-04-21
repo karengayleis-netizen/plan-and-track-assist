@@ -13,6 +13,11 @@ export function useStudents() {
 
   const fetchStudents = async () => {
     console.log('[useStudents] fetchStudents called, schoolId:', user?.schoolId, 'role:', user?.role);
+    if (!user?.schoolId) {
+      console.log('[useStudents] Skipping fetch — no schoolId yet');
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       
@@ -129,10 +134,10 @@ export function useStudents() {
   };
 
   useEffect(() => {
-    if (user) {
+    if (user?.schoolId) {
       fetchStudents();
     }
-  }, [user?.schoolId]);
+  }, [user?.schoolId, user?.role]);
 
   return { students, loading, error, addStudent, updateStudent, deleteStudent, refetch: fetchStudents };
 }

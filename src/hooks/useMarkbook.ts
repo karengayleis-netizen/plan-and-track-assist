@@ -12,6 +12,10 @@ export function useMarkbook(studentId?: string) {
   const { user } = useAuth();
 
   const fetchEntries = async () => {
+    if (!studentId && !user?.schoolId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       
@@ -79,7 +83,7 @@ export function useMarkbook(studentId?: string) {
   };
 
   useEffect(() => {
-    if (user) {
+    if (studentId || user?.schoolId) {
       fetchEntries();
     }
   }, [studentId, user?.schoolId]);
