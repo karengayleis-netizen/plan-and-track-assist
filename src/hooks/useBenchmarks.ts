@@ -85,7 +85,7 @@ export function useBenchmarks(studentId?: string) {
   };
 
   useEffect(() => {
-    if (user) {
+    if (studentId || user?.schoolId) {
       fetchBenchmarks();
     }
   }, [studentId, user?.schoolId]);
