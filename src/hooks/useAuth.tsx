@@ -74,14 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        // Set basic user info immediately
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          displayName: firebaseUser.displayName || undefined,
-          role: 'teacher', // Default, will be updated
-        });
-        
+        // Keep loading=true until we have the fully-hydrated user (role + schoolId).
+        // Avoid publishing a placeholder user — it triggers downstream Firestore
+        // queries with the wrong role/missing schoolId and produces permission errors.
+        setLoading(true);
+
         // Force-refresh the ID token so custom claims (role, schoolId) are available
         // Then fall back to Firestore lookups if claims are missing
         setTimeout(async () => {
