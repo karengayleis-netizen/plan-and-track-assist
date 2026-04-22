@@ -21,6 +21,7 @@ import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
 import { BulkActionsBar } from '@/components/students/BulkActionsBar';
 import { TagInput } from '@/components/ui/tag-input';
 import { Badge } from '@/components/ui/badge';
+import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow } from '@/lib/backfillParser';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -41,6 +42,13 @@ export function StudentsTab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filterTag, setFilterTag] = useState('all');
+
+  // Backfill state
+  const backfillInputRef = useRef<HTMLInputElement>(null);
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillPlan, setBackfillPlan] = useState<MatchPlan | null>(null);
+  const [backfillWarnings, setBackfillWarnings] = useState<string[]>([]);
+  const [backfillCommitting, setBackfillCommitting] = useState(false);
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
@@ -365,6 +373,49 @@ export function StudentsTab() {
 
   const selectedStudents = filteredStudents.filter(s => selectedIds.has(s.id));
 
+  const handleBackfillFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBackfillBusy(true);
+    try {
+      const { rows, warnings } = await parseBackfillFile(file);
+      if (rows.length === 0) {
+        toast.error('No usable rows found. Check that the file has Initials, Student Number, and Section columns.');
+        setBackfillWarnings(warnings);
+        return;
+      }
+      const plan = buildMatchPlan(rows, students);
+      setBackfillPlan(plan);
+      setBackfillWarnings(warnings);
+    } catch (err) {
+      console.error('[backfill] parse error', err);
+      toast.error('Failed to parse file');
+    } finally {
+      setBackfillBusy(false);
+      if (backfillInputRef.current) backfillInputRef.current.value = '';
+    }
+  };
+
+  const handleConfirmBackfill = async () => {
+    if (!backfillPlan) return;
+    setBackfillCommitting(true);
+    let ok = 0;
+    let fail = 0;
+    for (const m of backfillPlan.matched) {
+      try {
+        await updateStudent(m.studentId, { externalStudentNumber: m.row.externalNumber });
+        ok++;
+      } catch (e) {
+        console.error('[backfill] update failed', m, e);
+        fail++;
+      }
+    }
+    setBackfillCommitting(false);
+    setBackfillPlan(null);
+    if (ok > 0) toast.success(`Backfilled ${ok} board number${ok === 1 ? '' : 's'}`);
+    if (fail > 0) toast.error(`${fail} update${fail === 1 ? '' : 's'} failed`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Class Selection & CSV Upload */}
@@ -570,6 +621,108 @@ export function StudentsTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Whole-school Board Number Backfill */}
+      {isAdmin && (
+        <Card className="border-border/50 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Backfill Board Numbers (whole-school)</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Upload one Excel/CSV containing every student's <strong>Initials</strong>, <strong>Student Number</strong> (board ID), and <strong>Section Number</strong> (homeroom). Matches by initials + homeroom — only writes the board number; never overwrites names, grades, or tags.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Input
+                ref={backfillInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleBackfillFile}
+                disabled={backfillBusy}
+                className="max-w-md focus:ring-primary"
+              />
+              {backfillBusy && (
+                <span className="text-sm text-primary flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Parsing…
+                </span>
+              )}
+            </div>
+            {backfillWarnings.length > 0 && (
+              <div className="mt-3 text-xs text-warning space-y-1">
+                {backfillWarnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Backfill Preview Dialog */}
+      <Dialog open={!!backfillPlan} onOpenChange={(open) => !open && setBackfillPlan(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Backfill Preview</DialogTitle>
+          </DialogHeader>
+          {backfillPlan && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-success/30 bg-success/5 p-3">
+                  <div className="text-2xl font-semibold text-success">{backfillPlan.matched.length}</div>
+                  <div className="text-xs text-muted-foreground">Matched — ready to update</div>
+                </div>
+                <div className="rounded-lg border border-muted bg-muted/30 p-3">
+                  <div className="text-2xl font-semibold">{backfillPlan.alreadyCorrect.length}</div>
+                  <div className="text-xs text-muted-foreground">Already correct — will skip</div>
+                </div>
+                <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
+                  <div className="text-2xl font-semibold text-warning">{backfillPlan.unmatched.length}</div>
+                  <div className="text-xs text-muted-foreground">No student match</div>
+                </div>
+                <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
+                  <div className="text-2xl font-semibold text-warning">{backfillPlan.ambiguous.length}</div>
+                  <div className="text-xs text-muted-foreground">Ambiguous (multiple matches)</div>
+                </div>
+              </div>
+
+              {backfillPlan.unmatched.length > 0 && (
+                <div className="max-h-32 overflow-auto rounded border border-warning/30 p-2 bg-warning/5">
+                  <p className="text-xs font-medium text-warning mb-1">Unmatched rows:</p>
+                  {backfillPlan.unmatched.slice(0, 30).map((r, i) => (
+                    <div key={i} className="text-xs text-muted-foreground font-mono">
+                      Row {r.rowIndex}: {r.initials} in {r.homeroom} → {r.externalNumber}
+                    </div>
+                  ))}
+                  {backfillPlan.unmatched.length > 30 && (
+                    <p className="text-xs text-muted-foreground italic">…and {backfillPlan.unmatched.length - 30} more</p>
+                  )}
+                </div>
+              )}
+
+              {backfillPlan.ambiguous.length > 0 && (
+                <div className="max-h-32 overflow-auto rounded border border-warning/30 p-2 bg-warning/5">
+                  <p className="text-xs font-medium text-warning mb-1">Ambiguous rows (resolve manually in Edit Student):</p>
+                  {backfillPlan.ambiguous.map((a, i) => (
+                    <div key={i} className="text-xs text-muted-foreground font-mono">
+                      Row {a.row.rowIndex}: {a.row.initials} in {a.row.homeroom} matches {a.candidateIds.length} students
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBackfillPlan(null)} disabled={backfillCommitting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmBackfill}
+              disabled={backfillCommitting || !backfillPlan || backfillPlan.matched.length === 0}
+            >
+              {backfillCommitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Confirm Backfill ({backfillPlan?.matched.length ?? 0})
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Student Roster Table */}
       <Card className="border-border/50 shadow-sm">
