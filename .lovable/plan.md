@@ -1,46 +1,49 @@
 
 
-## Why 0 rows imported
+## Whole-School Board-Number Backfill from Excel/CSV
 
-Your transformed CSV uses Acadience's 7-digit board student numbers (`1027516`, `1035148`, etc.) in the **Student Number** column. But this app stores students under two identifiers:
-- `stableStudentId` — the internal canonical key
-- `studentNumber` — a coded display ID like `2AF-03`
-
-The wizard's matcher (`confirmMapping` in `useImportWizard.ts`) only checks those two fields. Since neither holds `1027516`, every row falls into "No student match found" → status becomes `warning` → `runImport` filters them out (`r.status !== 'error' && r.matchedStudentId`) → 0 imported.
-
-It is **not** the file size or whole-school scope — Firestore client writes have no batch limit issue at this scale, and the loop in `runImport` handles row-by-row.
-
-## Fix
-
-Add a third identifier on each student — the board's external Acadience/SIS number — and teach the matcher to use it. This is the standard pattern for school data tools that bridge an internal coded ID with the board's SIS export.
+### Goal
+Use the uploaded `Class_List_Cleaned_Initials_Numbers.xlsx`-style file to backfill `externalStudentNumber` on all 252 existing students in one upload, without touching any other student fields.
 
 ### What changes
 
-**1. `src/types/homeroom.ts` (Student type)** — Add an optional `externalStudentNumber?: string` field. This holds the board-issued number that appears in Acadience/DIBELS/SIS exports.
+**1. New "Backfill Board Numbers" upload control in the Students tab**
+A second, separate upload button (next to the existing per-class CSV uploader) labeled **"Backfill Board Numbers (whole-school)"**. Accepts `.csv` and `.xlsx`. No homeroom selection required — it processes the entire file.
 
-**2. Students tab — Edit Student dialog** — Add an "External / Board Student # (from SIS)" input next to the existing Student Number field. Admins fill this in once per student; teachers see it as read-only.
+**2. Flexible column detection**
+The parser reads the header row and locates columns by name (case-insensitive, trimmed):
+- **Initials** — required. Headers: `Student Initials`, `Initials`
+- **Board number** — required. Headers: `Student Number`, `Board Number`, `External Student Number`, `SIS ID`
+- **Section / Homeroom** — required. Headers: `Section Number`, `Section`, `Homeroom`, `Class`
+- **Grade** — optional, used as a tiebreaker. Headers: `Grade`, `Year Group`
+- Ignores everything else (`Student #`, `OEN`, `Gender`, etc.)
 
-**3. Bulk update path — CSV roster upload** — Extend the existing student CSV uploader (in `useStudents` / Students tab) to recognize an `External Student Number`/`Board Number`/`SIS ID` column and populate `externalStudentNumber` on create or update. This lets you backfill all 252 students in one shot from the same Acadience export's roster section.
+**3. Match existing students (no creation)**
+For each row, find the existing student by **`homeroom + initials`** (both normalized: trim, uppercase, strip dots from initials so `S.K.B.` matches `SKB` or `S.K.B.`). Optionally fall back to `homeroom + initials + grade` if there are duplicate initials inside one homeroom.
 
-**4. `src/hooks/useImportWizard.ts` — confirmMapping matcher** — Extend the lookup to a 3-tier match:
-```
-students.find(s => s.stableStudentId === rawIdentifier)
-|| students.find(s => s.studentNumber === rawIdentifier)
-|| students.find(s => s.externalStudentNumber === rawIdentifier)
-```
-Also normalize both sides (trim, strip leading zeros) so `01027516` matches `1027516`.
+For each match: only write `externalStudentNumber` (and `lastUpdated`). Never overwrite names, grades, gender, or tags.
 
-**5. Diagnostics on the Preview step** — When zero rows match, show a banner: *"No students matched. The CSV uses board numbers (e.g. 1027516) but your roster uses coded IDs (e.g. 2AF-03). Add board numbers to your students via the roster upload, or map a different identifier column."* Today the failure is invisible because the user clicks Import on a screen of warnings and sees 0 imported with no explanation.
+**4. Preview before commit**
+After parsing, show a summary modal:
+- ✅ N rows matched and ready to update
+- ⚠️ N rows with no match (list initials + homeroom so the admin can fix names manually)
+- ⚠️ N rows with ambiguous matches (multiple students with same initials in same homeroom — shown for manual resolution)
+- ℹ️ N rows where the board number is already correct (skip)
+
+The user clicks **Confirm Backfill** to commit. Without this preview, a typo in one initial would silently leave that student unmatched.
+
+**5. Excel (.xlsx) parsing**
+Add a lightweight client-side `.xlsx` reader (`xlsx` / SheetJS package, ~200KB). Reads all sheets, concatenates rows under a unified header. Falls back to CSV if a `.csv` is uploaded.
 
 ### Technical details
 
-- `externalStudentNumber` is indexed client-side via `students.find(...)`; no Firestore index needed at this roster size (~252).
-- Firestore rules need no change — same `students` collection, same `schoolId` scoping.
-- Backfill path: export a CSV from Acadience with `Student Number, Student Last Name, Student First Name, Class Name`, then upload via Students tab. The uploader matches on name + homeroom (existing logic) and writes `externalStudentNumber`.
-- The Copilot prompt for Acadience already outputs a `Student Number` column — no change to the prompt, since after backfill that value will resolve correctly.
-- Optional follow-up (not in this plan): also accept Last Name + First Name + Class Name as a tertiary fallback match in the wizard, for the rare case where a student lacks an `externalStudentNumber`.
+- **File:** `src/components/tabs/StudentsTab.tsx` — add a second upload card below the existing one, plus the preview dialog.
+- **New utility:** `src/lib/backfillParser.ts` — handles xlsx + csv parsing, header detection, normalization (`normalizeInitials(s) = s.replace(/\./g, '').toUpperCase().trim()`).
+- **Hook reuse:** Calls `updateStudent(id, { externalStudentNumber })` from `useStudents` in a loop. At 252 rows this is fine; no batching needed.
+- **Dependency:** add `xlsx` (SheetJS community edition) to `package.json`.
+- **No Firestore rule changes** — uses existing student update permissions.
+- **No data model changes** — `externalStudentNumber` already exists on the Student type.
 
 ### Result
-
-After backfilling external numbers once, every future Acadience/DIBELS upload matches without manual ID translation, and the 252 students you already have will accept benchmark imports straight from the board export.
+Upload the file once → preview shows ~252 matched / 0 unmatched (assuming initials line up) → click Confirm → every student now has their board number → the next Acadience benchmark import matches all rows immediately.
 
