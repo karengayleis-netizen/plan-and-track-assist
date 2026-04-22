@@ -19,10 +19,21 @@ export interface BackfillMatch {
   currentExternal?: string;
 }
 
+export interface DetectedColumns {
+  initials: string | null;
+  externalNumber: string | null;
+  homeroom: string | null;
+  rosterNumber: string | null;
+  grade: string | null;
+}
+
 export interface BackfillParseResult {
   rows: BackfillRow[];
   totalRowsRead: number;
   warnings: string[];
+  detectedColumns: DetectedColumns;
+  sampleRows: BackfillRow[];
+  allHeaders: string[];
 }
 
 const HEADER_ALIASES = {
@@ -56,8 +67,14 @@ const findHeaderIndex = (headers: string[], aliases: string[]): number => {
   return -1;
 };
 
-const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): BackfillRow[] => {
-  if (rows.length < 2) return [];
+interface SheetParseResult {
+  rows: BackfillRow[];
+  detected: DetectedColumns;
+  headers: string[];
+}
+
+const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): SheetParseResult => {
+  if (rows.length < 2) return { rows: [], detected: { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null }, headers: [] };
   const headers = (rows[0] as unknown[]).map(c => (c == null ? '' : String(c)));
 
   const iInit = findHeaderIndex(headers, HEADER_ALIASES.initials);
@@ -66,11 +83,19 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): B
   const iRoster = findHeaderIndex(headers, HEADER_ALIASES.rosterNumber);
   const iGrade = findHeaderIndex(headers, HEADER_ALIASES.grade);
 
+  const detected: DetectedColumns = {
+    initials: iInit !== -1 ? headers[iInit] : null,
+    externalNumber: iExt !== -1 ? headers[iExt] : null,
+    homeroom: iHome !== -1 ? headers[iHome] : null,
+    rosterNumber: iRoster !== -1 ? headers[iRoster] : null,
+    grade: iGrade !== -1 ? headers[iGrade] : null,
+  };
+
   if (iInit === -1 || iExt === -1 || iHome === -1) {
     warnings.push(
       `Sheet "${sheetName}": missing required column(s). Need Initials, Student/Board Number, and Section/Homeroom. Found headers: ${headers.join(', ')}`
     );
-    return [];
+    return { rows: [], detected, headers };
   }
 
   if (iRoster === -1) {
@@ -103,14 +128,26 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): B
       rowIndex: r + 1,
     });
   }
-  return out;
+  return { rows: out, detected, headers };
 };
 
 export async function parseBackfillFile(file: File): Promise<BackfillParseResult> {
   const warnings: string[] = [];
   const rows: BackfillRow[] = [];
+  let detectedColumns: DetectedColumns = { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null };
+  let allHeaders: string[] = [];
 
   const isXlsx = /\.xlsx$|\.xls$/i.test(file.name);
+
+  const mergeDetected = (d: DetectedColumns) => {
+    detectedColumns = {
+      initials: detectedColumns.initials ?? d.initials,
+      externalNumber: detectedColumns.externalNumber ?? d.externalNumber,
+      homeroom: detectedColumns.homeroom ?? d.homeroom,
+      rosterNumber: detectedColumns.rosterNumber ?? d.rosterNumber,
+      grade: detectedColumns.grade ?? d.grade,
+    };
+  };
 
   if (isXlsx) {
     const buf = await file.arrayBuffer();
@@ -118,7 +155,10 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
     for (const sheetName of wb.SheetNames) {
       const sheet = wb.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-      rows.push(...parseSheet(json, sheetName, warnings));
+      const result = parseSheet(json, sheetName, warnings);
+      rows.push(...result.rows);
+      mergeDetected(result.detected);
+      if (result.headers.length && !allHeaders.length) allHeaders = result.headers;
     }
   } else {
     const text = await file.text();
@@ -136,10 +176,20 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
       out.push(cur.trim());
       return out;
     });
-    rows.push(...parseSheet(matrix, 'CSV', warnings));
+    const result = parseSheet(matrix, 'CSV', warnings);
+    rows.push(...result.rows);
+    mergeDetected(result.detected);
+    allHeaders = result.headers;
   }
 
-  return { rows, totalRowsRead: rows.length, warnings };
+  return {
+    rows,
+    totalRowsRead: rows.length,
+    warnings,
+    detectedColumns,
+    sampleRows: rows.slice(0, 5),
+    allHeaders,
+  };
 }
 
 export interface MatchPlan {

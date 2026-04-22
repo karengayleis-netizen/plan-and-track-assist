@@ -21,7 +21,7 @@ import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
 import { BulkActionsBar } from '@/components/students/BulkActionsBar';
 import { TagInput } from '@/components/ui/tag-input';
 import { Badge } from '@/components/ui/badge';
-import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow } from '@/lib/backfillParser';
+import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow, type DetectedColumns } from '@/lib/backfillParser';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -48,6 +48,8 @@ export function StudentsTab() {
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillPlan, setBackfillPlan] = useState<MatchPlan | null>(null);
   const [backfillWarnings, setBackfillWarnings] = useState<string[]>([]);
+  const [backfillDetected, setBackfillDetected] = useState<DetectedColumns | null>(null);
+  const [backfillSampleRows, setBackfillSampleRows] = useState<BackfillRow[]>([]);
   const [backfillCommitting, setBackfillCommitting] = useState(false);
   
   // Form state for manual add
@@ -378,10 +380,13 @@ export function StudentsTab() {
     if (!file) return;
     setBackfillBusy(true);
     try {
-      const { rows, warnings } = await parseBackfillFile(file);
+      const { rows, warnings, detectedColumns, sampleRows } = await parseBackfillFile(file);
+      setBackfillDetected(detectedColumns);
+      setBackfillSampleRows(sampleRows);
       if (rows.length === 0) {
         toast.error('No usable rows found. Check that the file has Initials, Student Number, and Section columns.');
         setBackfillWarnings(warnings);
+        setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
         return;
       }
       const plan = buildMatchPlan(rows, students.map(s => ({
@@ -424,8 +429,30 @@ export function StudentsTab() {
     if (fail > 0) toast.error(`${fail} update${fail === 1 ? '' : 's'} failed`);
   };
 
+  // Roster coverage stats for board ID backfill
+  const totalStudents = students.length;
+  const studentsWithBoardId = students.filter(s => s.externalStudentNumber && String(s.externalStudentNumber).trim().length > 0).length;
+  const coveragePct = totalStudents > 0 ? Math.round((studentsWithBoardId / totalStudents) * 100) : 0;
+
   return (
     <div className="space-y-6">
+      {/* Roster Coverage Indicator */}
+      {isAdmin && totalStudents > 0 && (
+        <Card className="border-border/50 shadow-sm">
+          <CardContent className="py-3 px-4 flex items-center justify-between flex-wrap gap-2">
+            <div className="text-sm">
+              <span className="font-medium">Board IDs backfilled:</span>{' '}
+              <span className={coveragePct === 100 ? 'text-success font-semibold' : coveragePct > 0 ? 'text-warning font-semibold' : 'text-destructive font-semibold'}>
+                {studentsWithBoardId} / {totalStudents} students ({coveragePct}%)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Benchmark imports keyed on board IDs (e.g. <code className="bg-muted px-1 rounded">1027516</code>) require this to be high.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Class Selection & CSV Upload */}
       <Card className="border-border/50 shadow-sm">
         <CardHeader className="pb-4">
@@ -665,13 +692,58 @@ export function StudentsTab() {
       )}
 
       {/* Backfill Preview Dialog */}
-      <Dialog open={!!backfillPlan} onOpenChange={(open) => !open && setBackfillPlan(null)}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={!!backfillPlan} onOpenChange={(open) => { if (!open) { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Backfill Preview</DialogTitle>
           </DialogHeader>
           {backfillPlan && (
             <div className="space-y-4 text-sm">
+              {/* Detected columns panel */}
+              {backfillDetected && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
+                  <p className="text-xs font-semibold mb-1">Detected columns from your file:</p>
+                  {[
+                    { key: 'initials' as const, label: 'Initials column' },
+                    { key: 'externalNumber' as const, label: 'Board number column' },
+                    { key: 'homeroom' as const, label: 'Section/Homeroom' },
+                    { key: 'rosterNumber' as const, label: 'Roster ordinal (#)' },
+                    { key: 'grade' as const, label: 'Grade column' },
+                  ].map(({ key, label }) => {
+                    const value = backfillDetected[key];
+                    const isCritical = key === 'rosterNumber';
+                    return (
+                      <div key={key} className="flex items-center gap-2 font-mono text-xs">
+                        <span className="text-muted-foreground w-44">• {label}</span>
+                        <span className="text-muted-foreground">→</span>
+                        {value ? (
+                          <span className="text-success">"{value}" ✓</span>
+                        ) : (
+                          <span className={isCritical ? 'text-destructive font-semibold' : 'text-warning'}>
+                            NOT FOUND ✗ {isCritical && '← derived-ID match cannot run'}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Sample parsed rows */}
+              {backfillSampleRows.length > 0 && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
+                  <p className="text-xs font-semibold mb-1">Sample parsed rows (first {backfillSampleRows.length}):</p>
+                  <div className="space-y-1">
+                    {backfillSampleRows.map((r, i) => (
+                      <div key={i} className="text-[11px] font-mono text-muted-foreground">
+                        Row {r.rowIndex}: section="{r.homeroom}" #="{r.rosterNumber || '—'}" initials="{r.initials}" board="{r.externalNumber}"
+                        {r.derivedCodedId && <span className="text-success"> → derives ID "{r.derivedCodedId}"</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-success/30 bg-success/5 p-3">
                   <div className="text-2xl font-semibold text-success">{backfillPlan.matched.length}</div>
@@ -705,15 +777,36 @@ export function StudentsTab() {
               )}
 
               {backfillPlan.unmatched.length > 0 && (
-                <div className="max-h-40 overflow-auto rounded border border-warning/30 p-2 bg-warning/5">
-                  <p className="text-xs font-medium text-warning mb-1">Unmatched rows (sample):</p>
-                  {backfillPlan.unmatched.slice(0, 30).map((r, i) => (
-                    <div key={i} className="text-xs text-muted-foreground font-mono">
-                      Row {r.rowIndex}: section={r.homeroom || '—'} | #={r.rosterNumber || '—'} | derived={r.derivedCodedId || '—'} | init={r.initials} | board={r.externalNumber}
-                    </div>
-                  ))}
-                  {backfillPlan.unmatched.length > 30 && (
-                    <p className="text-xs text-muted-foreground italic">…and {backfillPlan.unmatched.length - 30} more</p>
+                <div className="rounded border border-warning/30 bg-warning/5 p-2">
+                  <p className="text-xs font-medium text-warning mb-2">First {Math.min(10, backfillPlan.unmatched.length)} unmatched rows (of {backfillPlan.unmatched.length}):</p>
+                  <div className="overflow-auto max-h-60">
+                    <table className="w-full text-[11px] font-mono">
+                      <thead>
+                        <tr className="text-muted-foreground border-b border-border">
+                          <th className="text-left p-1">Row</th>
+                          <th className="text-left p-1">Section</th>
+                          <th className="text-left p-1">#</th>
+                          <th className="text-left p-1">Initials</th>
+                          <th className="text-left p-1">Derived ID</th>
+                          <th className="text-left p-1">Board #</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {backfillPlan.unmatched.slice(0, 10).map((r, i) => (
+                          <tr key={i} className="border-b border-border/30">
+                            <td className="p-1">{r.rowIndex}</td>
+                            <td className="p-1">{r.homeroom || '—'}</td>
+                            <td className="p-1">{r.rosterNumber || '—'}</td>
+                            <td className="p-1">{r.initials}</td>
+                            <td className="p-1">{r.derivedCodedId || '—'}</td>
+                            <td className="p-1">{r.externalNumber}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {backfillPlan.unmatched.length > 10 && (
+                    <p className="text-[11px] text-muted-foreground italic mt-1">…and {backfillPlan.unmatched.length - 10} more</p>
                   )}
                 </div>
               )}
@@ -731,8 +824,8 @@ export function StudentsTab() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBackfillPlan(null)} disabled={backfillCommitting}>
-              Cancel
+            <Button variant="outline" onClick={() => { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); }} disabled={backfillCommitting}>
+              Close
             </Button>
             <Button
               onClick={handleConfirmBackfill}
