@@ -21,7 +21,7 @@ const statusColors: Record<string, string> = {
   error: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
-export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepProps) {
+export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading, classCodeMapped }: PreviewStepProps) {
   const [homeroomFilter, setHomeroomFilter] = useState<string>('all');
 
   // Collect unique homerooms from rows
@@ -40,23 +40,57 @@ export function PreviewStep({ rows, onImport, importing, onBack }: PreviewStepPr
     return rows.filter(r => (r.matchedHomeroom || r.csvHomeroom) === homeroomFilter);
   }, [rows, homeroomFilter]);
 
-  const readyCount = rows.filter(r => r.status === 'ready' && r.matchedStudentId).length;
+  // Importable = matched + not error (matches runImport logic; warnings are OK)
+  const importableCount = rows.filter(r => r.matchedStudentId && r.status !== 'error').length;
+  const matchedCount = rows.filter(r => r.matchedStudentId).length;
   const warningCount = rows.filter(r => r.status === 'warning').length;
   const errorCount = rows.filter(r => r.status === 'error').length;
   const unmatchedCount = rows.filter(r => !r.matchedStudentId && r.status !== 'error').length;
+  const homeroomMismatchCount = rows.filter(r => r.matchedStudentId && r.csvHomeroom && r.matchedHomeroom && r.csvHomeroom !== r.matchedHomeroom).length;
 
   return (
     <div className="space-y-4">
+      {/* Roster still loading */}
+      {studentsLoading && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm">
+          <p className="font-medium text-yellow-700 mb-1">Roster still loading</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Matching has not run yet — please wait a moment, then go Back and click Preview again.
+          </p>
+        </div>
+      )}
+
+      {/* Class Name not mapped warning */}
+      {!studentsLoading && classCodeMapped === false && rows.length > 0 && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm">
+          <p className="font-medium text-yellow-700 mb-1">Class Name was not mapped to Homeroom / Class Code</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Imports will still run, but homeroom information from the CSV won't be saved with each benchmark. Go Back to map the Class Name column.
+          </p>
+        </div>
+      )}
+
       {/* No-match diagnostic banner */}
-      {readyCount === 0 && rows.length > 0 && (
+      {!studentsLoading && matchedCount === 0 && rows.length > 0 && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
-          <p className="font-medium text-destructive mb-1">No students matched — nothing will import</p>
+          <p className="font-medium text-destructive mb-1">Student IDs did not match any roster records</p>
           <p className="text-muted-foreground text-xs leading-relaxed">
             Your CSV likely uses board / SIS student numbers (e.g. <code className="px-1 bg-muted rounded">1027516</code>) but your roster uses coded IDs (e.g. <code className="px-1 bg-muted rounded">2AF-03</code>).
             Backfill the <strong>External Student Number</strong> on each student via the Students tab (CSV upload or Edit), then re-run this import.
           </p>
         </div>
       )}
+
+      {/* Homeroom mismatch info banner */}
+      {!studentsLoading && homeroomMismatchCount > 0 && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm">
+          <p className="font-medium text-yellow-700 mb-1">{homeroomMismatchCount} row{homeroomMismatchCount === 1 ? '' : 's'} matched by student ID but homeroom differs</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            These will still import — student ID is the primary identity key. CSV homeroom is stored for audit.
+          </p>
+        </div>
+      )}
+
 
       {/* Summary */}
       <div className="grid grid-cols-4 gap-2">
