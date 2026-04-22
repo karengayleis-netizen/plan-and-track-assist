@@ -90,6 +90,11 @@ export function useImportWizard(onComplete?: () => void) {
   }, []);
 
   const confirmMapping = useCallback(() => {
+    // Guard: do not run matching while roster is still loading — would produce false unmatched
+    if (studentsLoading) {
+      console.warn('[ImportWizard] confirmMapping called before students loaded — skipping');
+      return;
+    }
     // Build rows + match students by studentNumber
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
