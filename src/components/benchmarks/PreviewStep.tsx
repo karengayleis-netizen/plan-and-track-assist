@@ -73,19 +73,40 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
 
       {/* No-match diagnostic banner */}
       {!studentsLoading && matchedCount === 0 && rows.length > 0 && (() => {
-        const uniqueIds = Array.from(new Set(rows.map(r => r.matchedStudentNumber || (r.rawValues?.[0] ?? '')).filter(Boolean))).slice(0, 6);
+        // Collect unique unmatched student IDs from raw CSV
+        const uniqueUnmatchedIds = Array.from(
+          new Set(rows.map(r => (r.rawValues?.[0] ?? '').trim()).filter(Boolean))
+        );
+        // Build roster ID set across all 3 identity fields
+        const rosterIdSet = new Set<string>();
+        (students ?? []).forEach(s => {
+          if (s.externalStudentNumber) rosterIdSet.add(String(s.externalStudentNumber).trim());
+          if (s.stableStudentId) rosterIdSet.add(String(s.stableStudentId).trim());
+          if (s.studentNumber) rosterIdSet.add(String(s.studentNumber).trim());
+        });
+        const presentInRoster = uniqueUnmatchedIds.filter(id => rosterIdSet.has(id)).length;
+        const sampleIds = uniqueUnmatchedIds.slice(0, 10);
         return (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
             <p className="font-medium text-destructive mb-1">Student IDs did not match any roster records</p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              This benchmark file is using <strong>board IDs</strong> (e.g. <code className="px-1 bg-muted rounded">1027516</code>), but those board IDs are not yet present on your roster — your students are stored under coded IDs like <code className="px-1 bg-muted rounded">1AF-3</code>.
+              <strong>{rows.length} failed rows</strong> represent <strong>{uniqueUnmatchedIds.length} unique student IDs</strong>.
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed mt-1">
-              Re-run the <strong>Backfill Board Numbers (whole-school)</strong> tool on the Students tab using a class list with <strong>Section Number</strong> + <strong>Student #</strong> columns. Then come back and re-import this file.
+              First {sampleIds.length} unmatched IDs: <code className="px-1 bg-muted rounded text-[11px]">{sampleIds.join(', ')}</code>
             </p>
-            <p className="text-muted-foreground text-[11px] mt-1">
-              {rows.length} row(s) failed across approximately {new Set(rows.map(r => r.rawValues?.[0])).size} unique student IDs.
+            <p className="text-muted-foreground text-xs leading-relaxed mt-1">
+              Of these, <strong className={presentInRoster === 0 ? 'text-destructive' : 'text-warning'}>{presentInRoster}</strong> are present on any student in the roster (as External, Stable, or Student Number).
             </p>
+            {presentInRoster === 0 ? (
+              <p className="text-muted-foreground text-xs leading-relaxed mt-2">
+                → This benchmark file is using <strong>board IDs</strong> that are not yet on the roster. Re-run the <strong>Backfill Board Numbers (whole-school)</strong> tool on the Students tab using a class list with <strong>Section Number</strong> + <strong>Student #</strong> columns. Then re-import this file.
+              </p>
+            ) : (
+              <p className="text-muted-foreground text-xs leading-relaxed mt-2">
+                → IDs exist in the roster but matching still fails. This points to a matcher bug or normalization issue, not a backfill gap.
+              </p>
+            )}
           </div>
         );
       })()}
