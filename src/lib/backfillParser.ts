@@ -1,9 +1,13 @@
 import * as XLSX from 'xlsx';
 
+export type MatchSource = 'codedId' | 'initialsHomeroom';
+
 export interface BackfillRow {
   initials: string;
-  externalNumber: string;
-  homeroom: string;
+  externalNumber: string;       // board ID e.g., "1027516"
+  homeroom: string;             // section / class code e.g., "1AF"
+  rosterNumber?: string;        // ordinal student # within class e.g., "3"
+  derivedCodedId?: string;      // "1AF-3" if both section + roster# present
   grade?: string;
   rowIndex: number;
 }
@@ -11,6 +15,7 @@ export interface BackfillRow {
 export interface BackfillMatch {
   row: BackfillRow;
   studentId: string;
+  matchSource: MatchSource;
   currentExternal?: string;
 }
 
@@ -24,6 +29,7 @@ const HEADER_ALIASES = {
   initials: ['student initials', 'initials'],
   externalNumber: ['student number', 'board number', 'external student number', 'sis id', 'board student number'],
   homeroom: ['section number', 'section', 'homeroom', 'class', 'class name'],
+  rosterNumber: ['student #', 'student number in class', 'roster number', 'number', 'student no', 'student no.', '#'],
   grade: ['grade', 'year group'],
 };
 
@@ -32,6 +38,14 @@ export const normalizeInitials = (s: string): string =>
 
 export const normalizeHomeroom = (s: string): string =>
   (s || '').toUpperCase().trim();
+
+const cleanCell = (v: unknown): string => {
+  if (v == null) return '';
+  let s = String(v).trim();
+  // strip Excel-trailing ".0" on numeric-coerced ints
+  if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, '');
+  return s;
+};
 
 const findHeaderIndex = (headers: string[], aliases: string[]): number => {
   const lower = headers.map(h => (h || '').toString().toLowerCase().trim());
@@ -49,6 +63,7 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): B
   const iInit = findHeaderIndex(headers, HEADER_ALIASES.initials);
   const iExt = findHeaderIndex(headers, HEADER_ALIASES.externalNumber);
   const iHome = findHeaderIndex(headers, HEADER_ALIASES.homeroom);
+  const iRoster = findHeaderIndex(headers, HEADER_ALIASES.rosterNumber);
   const iGrade = findHeaderIndex(headers, HEADER_ALIASES.grade);
 
   if (iInit === -1 || iExt === -1 || iHome === -1) {
@@ -58,16 +73,35 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): B
     return [];
   }
 
+  if (iRoster === -1) {
+    warnings.push(
+      `Sheet "${sheetName}": no "Student #" / roster ordinal column detected. Falling back to initials+homeroom matching for this sheet.`
+    );
+  }
+
   const out: BackfillRow[] = [];
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r] as unknown[];
     if (!row || row.length === 0) continue;
-    const initials = String(row[iInit] ?? '').trim();
-    const externalNumber = String(row[iExt] ?? '').trim();
-    const homeroom = String(row[iHome] ?? '').trim();
-    const grade = iGrade !== -1 ? String(row[iGrade] ?? '').trim() : undefined;
+    const initials = cleanCell(row[iInit]);
+    const externalNumber = cleanCell(row[iExt]);
+    const homeroom = cleanCell(row[iHome]);
+    const rosterNumber = iRoster !== -1 ? cleanCell(row[iRoster]) : '';
+    const grade = iGrade !== -1 ? cleanCell(row[iGrade]) : undefined;
     if (!initials || !externalNumber || !homeroom) continue;
-    out.push({ initials, externalNumber, homeroom, grade, rowIndex: r + 1 });
+
+    const derivedCodedId =
+      rosterNumber && homeroom ? `${normalizeHomeroom(homeroom)}-${rosterNumber}` : undefined;
+
+    out.push({
+      initials,
+      externalNumber,
+      homeroom,
+      rosterNumber: rosterNumber || undefined,
+      derivedCodedId,
+      grade,
+      rowIndex: r + 1,
+    });
   }
   return out;
 };
@@ -113,44 +147,112 @@ export interface MatchPlan {
   alreadyCorrect: BackfillRow[];
   unmatched: BackfillRow[];
   ambiguous: { row: BackfillRow; candidateIds: string[] }[];
+  // diagnostics
+  matchedByCodedId: number;
+  matchedByInitials: number;
+  missingRosterNumber: number;
+  missingSection: number;
+  derivedIdNotInRoster: number;
 }
 
-export function buildMatchPlan(
-  rows: BackfillRow[],
-  students: { id: string; initials: string; homeroom: string; grade?: string; externalStudentNumber?: string }[]
-): MatchPlan {
+interface RosterStudent {
+  id: string;
+  initials: string;
+  homeroom: string;
+  grade?: string;
+  externalStudentNumber?: string;
+  stableStudentId?: string;
+  studentNumber?: string;
+}
+
+export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): MatchPlan {
   const matched: BackfillMatch[] = [];
   const alreadyCorrect: BackfillRow[] = [];
   const unmatched: BackfillRow[] = [];
   const ambiguous: { row: BackfillRow; candidateIds: string[] }[] = [];
 
+  let matchedByCodedId = 0;
+  let matchedByInitials = 0;
+  let missingRosterNumber = 0;
+  let missingSection = 0;
+  let derivedIdNotInRoster = 0;
+
+  // Index roster by stableStudentId / studentNumber for fast lookup
+  const byCodedId = new Map<string, RosterStudent>();
+  for (const s of students) {
+    if (s.stableStudentId) byCodedId.set(s.stableStudentId.trim().toUpperCase(), s);
+    if (s.studentNumber) byCodedId.set(s.studentNumber.trim().toUpperCase(), s);
+  }
+
   for (const row of rows) {
-    const targetInit = normalizeInitials(row.initials);
-    const targetHome = normalizeHomeroom(row.homeroom);
+    if (!row.homeroom) missingSection++;
+    if (!row.rosterNumber) missingRosterNumber++;
 
-    let candidates = students.filter(
-      s => normalizeInitials(s.initials) === targetInit && normalizeHomeroom(s.homeroom) === targetHome
-    );
+    let chosen: RosterStudent | undefined;
+    let source: MatchSource | undefined;
 
-    // Tiebreaker: grade
-    if (candidates.length > 1 && row.grade) {
-      const byGrade = candidates.filter(s => String(s.grade ?? '').trim() === String(row.grade).trim());
-      if (byGrade.length === 1) candidates = byGrade;
+    // 1) Try derived coded ID
+    if (row.derivedCodedId) {
+      const key = row.derivedCodedId.toUpperCase();
+      const hit = byCodedId.get(key);
+      if (hit) {
+        chosen = hit;
+        source = 'codedId';
+      } else {
+        derivedIdNotInRoster++;
+      }
     }
 
-    if (candidates.length === 0) {
-      unmatched.push(row);
-    } else if (candidates.length > 1) {
-      ambiguous.push({ row, candidateIds: candidates.map(c => c.id) });
-    } else {
-      const s = candidates[0];
-      if ((s.externalStudentNumber || '').trim() === row.externalNumber.trim()) {
-        alreadyCorrect.push(row);
-      } else {
-        matched.push({ row, studentId: s.id, currentExternal: s.externalStudentNumber });
+    // 2) Fallback: initials + homeroom
+    if (!chosen) {
+      const targetInit = normalizeInitials(row.initials);
+      const targetHome = normalizeHomeroom(row.homeroom);
+      let candidates = students.filter(
+        s => normalizeInitials(s.initials) === targetInit && normalizeHomeroom(s.homeroom) === targetHome
+      );
+      if (candidates.length > 1 && row.grade) {
+        const byGrade = candidates.filter(s => String(s.grade ?? '').trim() === String(row.grade).trim());
+        if (byGrade.length === 1) candidates = byGrade;
       }
+      if (candidates.length === 0) {
+        unmatched.push(row);
+        continue;
+      } else if (candidates.length > 1) {
+        ambiguous.push({ row, candidateIds: candidates.map(c => c.id) });
+        continue;
+      }
+      chosen = candidates[0];
+      source = 'initialsHomeroom';
+    }
+
+    if (!chosen || !source) {
+      unmatched.push(row);
+      continue;
+    }
+
+    if ((chosen.externalStudentNumber || '').trim() === row.externalNumber.trim()) {
+      alreadyCorrect.push(row);
+    } else {
+      matched.push({
+        row,
+        studentId: chosen.id,
+        matchSource: source,
+        currentExternal: chosen.externalStudentNumber,
+      });
+      if (source === 'codedId') matchedByCodedId++;
+      else matchedByInitials++;
     }
   }
 
-  return { matched, alreadyCorrect, unmatched, ambiguous };
+  return {
+    matched,
+    alreadyCorrect,
+    unmatched,
+    ambiguous,
+    matchedByCodedId,
+    matchedByInitials,
+    missingRosterNumber,
+    missingSection,
+    derivedIdNotInRoster,
+  };
 }
