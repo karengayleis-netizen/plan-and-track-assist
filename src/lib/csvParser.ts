@@ -71,7 +71,7 @@ const COLUMN_ALIASES: Record<InternalField, string[]> = {
   strand: ['strand', 'category', 'area', 'content area'],
   benchmarkWindow: ['window', 'benchmark window', 'period', 'term', 'season'],
   teacher: ['teacher', 'instructor', 'teacher name', 'teacher_name'],
-  classCode: ['class', 'class code', 'class_code', 'section', 'homeroom'],
+  classCode: ['class', 'class code', 'class_code', 'section', 'homeroom', 'class name', 'classname', 'classroom', 'class_name'],
   rawScore: ['raw score', 'raw_score', 'raw'],
   percent: ['percent', 'percentage', 'pct', '%'],
   status: ['status', 'level', 'benchmark status', 'performance level', 'risk'],

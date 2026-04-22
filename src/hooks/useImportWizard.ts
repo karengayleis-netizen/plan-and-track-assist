@@ -42,7 +42,7 @@ const emptyMapping = (): ColumnMapping => {
 
 export function useImportWizard(onComplete?: () => void) {
   const { user } = useAuth();
-  const { students } = useStudents();
+  const { students, loading: studentsLoading } = useStudents();
 
   const [state, setState] = useState<WizardState>({
     step: WS.ChooseSource,
@@ -90,6 +90,11 @@ export function useImportWizard(onComplete?: () => void) {
   }, []);
 
   const confirmMapping = useCallback(() => {
+    // Guard: do not run matching while roster is still loading — would produce false unmatched
+    if (studentsLoading) {
+      console.warn('[ImportWizard] confirmMapping called before students loaded — skipping');
+      return;
+    }
     // Build rows + match students by studentNumber
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
@@ -146,7 +151,7 @@ export function useImportWizard(onComplete?: () => void) {
     });
 
     setState(s => ({ ...s, importRows: matched, step: WS.PreviewValidate }));
-  }, [state.rawRows, state.columnMapping, students]);
+  }, [state.rawRows, state.columnMapping, students, studentsLoading]);
 
   // Step 4 → 5 Import
   const runImport = useCallback(async () => {
@@ -320,6 +325,7 @@ export function useImportWizard(onComplete?: () => void) {
   return {
     state,
     errorSummary,
+    studentsLoading,
     setStep,
     selectSource,
     uploadFile,
