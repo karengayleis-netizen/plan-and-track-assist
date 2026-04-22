@@ -19,10 +19,21 @@ export interface BackfillMatch {
   currentExternal?: string;
 }
 
+export interface DetectedColumns {
+  initials: string | null;
+  externalNumber: string | null;
+  homeroom: string | null;
+  rosterNumber: string | null;
+  grade: string | null;
+}
+
 export interface BackfillParseResult {
   rows: BackfillRow[];
   totalRowsRead: number;
   warnings: string[];
+  detectedColumns: DetectedColumns;
+  sampleRows: BackfillRow[];
+  allHeaders: string[];
 }
 
 const HEADER_ALIASES = {
