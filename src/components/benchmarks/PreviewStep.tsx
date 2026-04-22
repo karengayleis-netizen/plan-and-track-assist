@@ -11,6 +11,8 @@ interface PreviewStepProps {
   onImport: () => void;
   importing: boolean;
   onBack: () => void;
+  studentsLoading?: boolean;
+  classCodeMapped?: boolean;
 }
 
 const statusColors: Record<string, string> = {
