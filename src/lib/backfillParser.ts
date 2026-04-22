@@ -67,8 +67,14 @@ const findHeaderIndex = (headers: string[], aliases: string[]): number => {
   return -1;
 };
 
-const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): BackfillRow[] => {
-  if (rows.length < 2) return [];
+interface SheetParseResult {
+  rows: BackfillRow[];
+  detected: DetectedColumns;
+  headers: string[];
+}
+
+const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): SheetParseResult => {
+  if (rows.length < 2) return { rows: [], detected: { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null }, headers: [] };
   const headers = (rows[0] as unknown[]).map(c => (c == null ? '' : String(c)));
 
   const iInit = findHeaderIndex(headers, HEADER_ALIASES.initials);
@@ -77,11 +83,19 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): B
   const iRoster = findHeaderIndex(headers, HEADER_ALIASES.rosterNumber);
   const iGrade = findHeaderIndex(headers, HEADER_ALIASES.grade);
 
+  const detected: DetectedColumns = {
+    initials: iInit !== -1 ? headers[iInit] : null,
+    externalNumber: iExt !== -1 ? headers[iExt] : null,
+    homeroom: iHome !== -1 ? headers[iHome] : null,
+    rosterNumber: iRoster !== -1 ? headers[iRoster] : null,
+    grade: iGrade !== -1 ? headers[iGrade] : null,
+  };
+
   if (iInit === -1 || iExt === -1 || iHome === -1) {
     warnings.push(
       `Sheet "${sheetName}": missing required column(s). Need Initials, Student/Board Number, and Section/Homeroom. Found headers: ${headers.join(', ')}`
     );
-    return [];
+    return { rows: [], detected, headers };
   }
 
   if (iRoster === -1) {
@@ -114,7 +128,7 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): B
       rowIndex: r + 1,
     });
   }
-  return out;
+  return { rows: out, detected, headers };
 };
 
 export async function parseBackfillFile(file: File): Promise<BackfillParseResult> {
