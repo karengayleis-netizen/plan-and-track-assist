@@ -34,8 +34,20 @@ export function MappingStep({ headers, mapping, onUpdateMapping, onConfirm, onBa
 
   const requiredMapped = REQUIRED_FIELDS.every(f => mapping[f] >= 0);
 
+  // Hint: if a "class name" / "homeroom" / "classroom" header exists but classCode is unmapped
+  const classNameHeaderIdx = headers.findIndex(h => {
+    const l = h.toLowerCase().trim();
+    return l === 'class name' || l === 'classname' || l === 'classroom' || l === 'homeroom' || l === 'class';
+  });
+  const showClassNameHint = classNameHeaderIdx >= 0 && mapping.classCode < 0;
+
   return (
     <div className="space-y-4">
+      {showClassNameHint && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-xs">
+          Detected a <strong>"{headers[classNameHeaderIdx]}"</strong> column — consider mapping it to <strong>Class Code</strong> so homeroom info is saved with each benchmark.
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Map CSV columns to internal fields. <span className="text-destructive">*</span> = required.
