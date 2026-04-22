@@ -1,49 +1,97 @@
 
+Fix the benchmark import so this CSV can match the roster reliably.
 
-## Whole-School Board-Number Backfill from Excel/CSV
+## What’s actually going wrong
 
-### Goal
-Use the uploaded `Class_List_Cleaned_Initials_Numbers.xlsx`-style file to backfill `externalStudentNumber` on all 252 existing students in one upload, without touching any other student fields.
+This is not the old `.xlsx` problem anymore. The file you uploaded now is a valid CSV and its headers are correct for Acadience.
 
-### What changes
+The current failure is more likely caused by three app-side issues working together:
 
-**1. New "Backfill Board Numbers" upload control in the Students tab**
-A second, separate upload button (next to the existing per-class CSV uploader) labeled **"Backfill Board Numbers (whole-school)"**. Accepts `.csv` and `.xlsx`. No homeroom selection required — it processes the entire file.
+1. `useImportWizard` creates its own `useStudents()` instance and can run matching before that roster has finished loading, so `confirmMapping()` may compare against an empty `students` array.
+2. The uploaded file uses the header `Class Name`, but `detectColumnMapping()` does not currently treat `Class Name` as a `classCode` alias, so homeroom mapping is not auto-detected.
+3. `PreviewStep` only counts `ready` rows for the import button, but `runImport()` actually allows both `ready` and `warning` rows. If rows are matched but flagged with warnings, the UI can still look like “nothing will import.”
 
-**2. Flexible column detection**
-The parser reads the header row and locates columns by name (case-insensitive, trimmed):
-- **Initials** — required. Headers: `Student Initials`, `Initials`
-- **Board number** — required. Headers: `Student Number`, `Board Number`, `External Student Number`, `SIS ID`
-- **Section / Homeroom** — required. Headers: `Section Number`, `Section`, `Homeroom`, `Class`
-- **Grade** — optional, used as a tiebreaker. Headers: `Grade`, `Year Group`
-- Ignores everything else (`Student #`, `OEN`, `Gender`, etc.)
+## Implementation plan
 
-**3. Match existing students (no creation)**
-For each row, find the existing student by **`homeroom + initials`** (both normalized: trim, uppercase, strip dots from initials so `S.K.B.` matches `SKB` or `S.K.B.`). Optionally fall back to `homeroom + initials + grade` if there are duplicate initials inside one homeroom.
+### 1. Block matching until the student roster is fully loaded
+Update `src/hooks/useImportWizard.ts` to consume both `students` and `loading` from `useStudents()`.
 
-For each match: only write `externalStudentNumber` (and `lastUpdated`). Never overwrite names, grades, gender, or tags.
+- Add a guard in `confirmMapping()`:
+  - if roster is still loading, do not build unmatched rows yet
+  - surface a clear message like “Roster is still loading — please wait a moment and try Preview again”
+- Expose a `studentsLoading` flag through the wizard state so the UI can react before matching begins.
 
-**4. Preview before commit**
-After parsing, show a summary modal:
-- ✅ N rows matched and ready to update
-- ⚠️ N rows with no match (list initials + homeroom so the admin can fix names manually)
-- ⚠️ N rows with ambiguous matches (multiple students with same initials in same homeroom — shown for manual resolution)
-- ℹ️ N rows where the board number is already correct (skip)
+### 2. Auto-detect the homeroom column from this Acadience file
+Update `src/lib/csvParser.ts` column aliases so `classCode` also matches:
 
-The user clicks **Confirm Backfill** to commit. Without this preview, a typo in one initial would silently leave that student unmatched.
+- `class name`
+- `classname`
+- `classroom`
 
-**5. Excel (.xlsx) parsing**
-Add a lightweight client-side `.xlsx` reader (`xlsx` / SheetJS package, ~200KB). Reads all sheets, concatenates rows under a unified header. Falls back to CSV if a `.csv` is uploaded.
+This will let the uploaded CSV auto-map `Class Name` without manual intervention.
 
-### Technical details
+### 3. Make the preview/import counts match the real import logic
+Update `src/components/benchmarks/PreviewStep.tsx` so the primary import count is based on:
 
-- **File:** `src/components/tabs/StudentsTab.tsx` — add a second upload card below the existing one, plus the preview dialog.
-- **New utility:** `src/lib/backfillParser.ts` — handles xlsx + csv parsing, header detection, normalization (`normalizeInitials(s) = s.replace(/\./g, '').toUpperCase().trim()`).
-- **Hook reuse:** Calls `updateStudent(id, { externalStudentNumber })` from `useStudents` in a loop. At 252 rows this is fine; no batching needed.
-- **Dependency:** add `xlsx` (SheetJS community edition) to `package.json`.
-- **No Firestore rule changes** — uses existing student update permissions.
-- **No data model changes** — `externalStudentNumber` already exists on the Student type.
+- `matchedStudentId`
+- `status !== 'error'`
 
-### Result
-Upload the file once → preview shows ~252 matched / 0 unmatched (assuming initials line up) → click Confirm → every student now has their board number → the next Acadience benchmark import matches all rows immediately.
+instead of only `status === 'ready'`.
+
+That means:
+- matched rows with warnings still show as importable
+- the button label reflects what `runImport()` will actually write
+- the import button is no longer disabled for warning-only batches
+
+### 4. Improve the failure diagnostics in the preview step
+Refine the preview banner to distinguish between:
+
+- roster still loading
+- zero student matches
+- homeroom column not mapped
+- homeroom mismatches on otherwise matched students
+
+Add copy such as:
+- “Roster still loading — matching has not run yet.”
+- “Student IDs did not match any roster records.”
+- “Class Name was not mapped to Homeroom/Class Code.”
+- “Some rows matched by student ID but the homeroom differs.”
+
+### 5. Preserve current import behavior for whole-school files
+Keep homeroom mismatch as a warning, not a blocker.
+
+That matches the existing whole-school design:
+- student ID is the primary identity key
+- CSV homeroom is stored for audit/reporting
+- mismatches should be visible, but should not stop import if the student match is confident
+
+## Files to update
+
+- `src/hooks/useImportWizard.ts`
+  - add roster-loading guard
+  - expose matching readiness / importable counts
+- `src/lib/csvParser.ts`
+  - extend `classCode` header aliases
+- `src/components/benchmarks/PreviewStep.tsx`
+  - count importable rows correctly
+  - improve banners and messaging
+- `src/components/benchmarks/MappingStep.tsx`
+  - optionally show a hint when `Class Name` is detected but not mapped
+
+## Expected result
+
+After this change, your uploaded Acadience CSV should behave like this:
+
+- `Student Number` matches students using the backfilled `externalStudentNumber`
+- `Class Name` auto-maps to the homeroom/class field
+- the wizard waits for the roster before declaring rows unmatched
+- matched rows with warnings still show as importable
+- the preview clearly tells you whether the issue is ID matching, homeroom mapping, or simply roster load timing
+
+## Technical notes
+
+- No Firestore rule changes needed.
+- No student data model changes needed.
+- No backend changes needed.
+- This is a front-end/import-state fix only.
 
