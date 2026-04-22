@@ -95,7 +95,7 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
       {/* Summary */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          { label: 'Ready', count: readyCount, color: 'text-green-600' },
+          { label: 'Importable', count: importableCount, color: 'text-green-600' },
           { label: 'Warnings', count: warningCount, color: 'text-yellow-600' },
           { label: 'Errors', count: errorCount, color: 'text-destructive' },
           { label: 'Unmatched', count: unmatchedCount, color: 'text-muted-foreground' },
