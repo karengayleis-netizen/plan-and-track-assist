@@ -429,8 +429,30 @@ export function StudentsTab() {
     if (fail > 0) toast.error(`${fail} update${fail === 1 ? '' : 's'} failed`);
   };
 
+  // Roster coverage stats for board ID backfill
+  const totalStudents = students.length;
+  const studentsWithBoardId = students.filter(s => s.externalStudentNumber && String(s.externalStudentNumber).trim().length > 0).length;
+  const coveragePct = totalStudents > 0 ? Math.round((studentsWithBoardId / totalStudents) * 100) : 0;
+
   return (
     <div className="space-y-6">
+      {/* Roster Coverage Indicator */}
+      {isAdmin && totalStudents > 0 && (
+        <Card className="border-border/50 shadow-sm">
+          <CardContent className="py-3 px-4 flex items-center justify-between flex-wrap gap-2">
+            <div className="text-sm">
+              <span className="font-medium">Board IDs backfilled:</span>{' '}
+              <span className={coveragePct === 100 ? 'text-success font-semibold' : coveragePct > 0 ? 'text-warning font-semibold' : 'text-destructive font-semibold'}>
+                {studentsWithBoardId} / {totalStudents} students ({coveragePct}%)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Benchmark imports keyed on board IDs (e.g. <code className="bg-muted px-1 rounded">1027516</code>) require this to be high.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Class Selection & CSV Upload */}
       <Card className="border-border/50 shadow-sm">
         <CardHeader className="pb-4">
