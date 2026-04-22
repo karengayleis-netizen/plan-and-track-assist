@@ -185,11 +185,11 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="h-4 w-4 mr-1" /> Back
         </Button>
-        <Button onClick={onImport} disabled={importing || readyCount === 0}>
+        <Button onClick={onImport} disabled={importing || importableCount === 0}>
           {importing ? (
             <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importing...</>
           ) : (
-            `Import ${readyCount} Rows`
+            `Import ${importableCount} Rows`
           )}
         </Button>
       </div>
