@@ -21,7 +21,7 @@ import { StudentSummaryPanel } from '@/components/students/StudentSummaryPanel';
 import { BulkActionsBar } from '@/components/students/BulkActionsBar';
 import { TagInput } from '@/components/ui/tag-input';
 import { Badge } from '@/components/ui/badge';
-import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow } from '@/lib/backfillParser';
+import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow, type DetectedColumns } from '@/lib/backfillParser';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -48,6 +48,8 @@ export function StudentsTab() {
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillPlan, setBackfillPlan] = useState<MatchPlan | null>(null);
   const [backfillWarnings, setBackfillWarnings] = useState<string[]>([]);
+  const [backfillDetected, setBackfillDetected] = useState<DetectedColumns | null>(null);
+  const [backfillSampleRows, setBackfillSampleRows] = useState<BackfillRow[]>([]);
   const [backfillCommitting, setBackfillCommitting] = useState(false);
   
   // Form state for manual add
