@@ -134,8 +134,20 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): S
 export async function parseBackfillFile(file: File): Promise<BackfillParseResult> {
   const warnings: string[] = [];
   const rows: BackfillRow[] = [];
+  let detectedColumns: DetectedColumns = { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null };
+  let allHeaders: string[] = [];
 
   const isXlsx = /\.xlsx$|\.xls$/i.test(file.name);
+
+  const mergeDetected = (d: DetectedColumns) => {
+    detectedColumns = {
+      initials: detectedColumns.initials ?? d.initials,
+      externalNumber: detectedColumns.externalNumber ?? d.externalNumber,
+      homeroom: detectedColumns.homeroom ?? d.homeroom,
+      rosterNumber: detectedColumns.rosterNumber ?? d.rosterNumber,
+      grade: detectedColumns.grade ?? d.grade,
+    };
+  };
 
   if (isXlsx) {
     const buf = await file.arrayBuffer();
@@ -143,7 +155,10 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
     for (const sheetName of wb.SheetNames) {
       const sheet = wb.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-      rows.push(...parseSheet(json, sheetName, warnings));
+      const result = parseSheet(json, sheetName, warnings);
+      rows.push(...result.rows);
+      mergeDetected(result.detected);
+      if (result.headers.length && !allHeaders.length) allHeaders = result.headers;
     }
   } else {
     const text = await file.text();
@@ -161,10 +176,20 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
       out.push(cur.trim());
       return out;
     });
-    rows.push(...parseSheet(matrix, 'CSV', warnings));
+    const result = parseSheet(matrix, 'CSV', warnings);
+    rows.push(...result.rows);
+    mergeDetected(result.detected);
+    allHeaders = result.headers;
   }
 
-  return { rows, totalRowsRead: rows.length, warnings };
+  return {
+    rows,
+    totalRowsRead: rows.length,
+    warnings,
+    detectedColumns,
+    sampleRows: rows.slice(0, 5),
+    allHeaders,
+  };
 }
 
 export interface MatchPlan {
