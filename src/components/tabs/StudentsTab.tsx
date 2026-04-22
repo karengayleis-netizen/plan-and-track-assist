@@ -384,7 +384,15 @@ export function StudentsTab() {
         setBackfillWarnings(warnings);
         return;
       }
-      const plan = buildMatchPlan(rows, students);
+      const plan = buildMatchPlan(rows, students.map(s => ({
+        id: s.id,
+        initials: s.initials,
+        homeroom: s.homeroom,
+        grade: s.grade,
+        externalStudentNumber: s.externalStudentNumber,
+        stableStudentId: s.stableStudentId,
+        studentNumber: s.studentNumber,
+      })));
       setBackfillPlan(plan);
       setBackfillWarnings(warnings);
     } catch (err) {
@@ -628,7 +636,7 @@ export function StudentsTab() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Backfill Board Numbers (whole-school)</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Upload one Excel/CSV containing every student's <strong>Initials</strong>, <strong>Student Number</strong> (board ID), and <strong>Section Number</strong> (homeroom). Matches by initials + homeroom — only writes the board number; never overwrites names, grades, or tags.
+              Upload one Excel/CSV with <strong>Student #</strong>, <strong>Student Initials</strong>, <strong>Student Number</strong> (board ID), and <strong>Section Number</strong>. Matches primarily by derived coded ID (e.g. <code className="bg-muted px-1 rounded">1AF-3</code>), falling back to Initials + Homeroom. Only writes board number; never overwrites other fields.
             </p>
           </CardHeader>
           <CardContent>
@@ -668,6 +676,9 @@ export function StudentsTab() {
                 <div className="rounded-lg border border-success/30 bg-success/5 p-3">
                   <div className="text-2xl font-semibold text-success">{backfillPlan.matched.length}</div>
                   <div className="text-xs text-muted-foreground">Matched — ready to update</div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    {backfillPlan.matchedByCodedId} by Section + Student # · {backfillPlan.matchedByInitials} by Initials + Homeroom
+                  </div>
                 </div>
                 <div className="rounded-lg border border-muted bg-muted/30 p-3">
                   <div className="text-2xl font-semibold">{backfillPlan.alreadyCorrect.length}</div>
@@ -683,12 +694,22 @@ export function StudentsTab() {
                 </div>
               </div>
 
+              {(backfillPlan.missingRosterNumber > 0 || backfillPlan.missingSection > 0 || backfillPlan.derivedIdNotInRoster > 0 || backfillPlan.matchedByInitials > 0) && (
+                <div className="rounded border border-warning/30 bg-warning/5 p-2 text-xs space-y-1">
+                  <p className="font-medium text-warning">Diagnostics</p>
+                  {backfillPlan.missingRosterNumber > 0 && <p className="text-muted-foreground">• {backfillPlan.missingRosterNumber} row(s) missing Student # (ordinal)</p>}
+                  {backfillPlan.missingSection > 0 && <p className="text-muted-foreground">• {backfillPlan.missingSection} row(s) missing Section Number</p>}
+                  {backfillPlan.derivedIdNotInRoster > 0 && <p className="text-muted-foreground">• {backfillPlan.derivedIdNotInRoster} row(s) had a derived ID (e.g. 1AF-3) that doesn't exist in the current roster</p>}
+                  {backfillPlan.matchedByInitials > 0 && <p className="text-muted-foreground">• {backfillPlan.matchedByInitials} row(s) only matched by Initials fallback — verify these are the correct students</p>}
+                </div>
+              )}
+
               {backfillPlan.unmatched.length > 0 && (
-                <div className="max-h-32 overflow-auto rounded border border-warning/30 p-2 bg-warning/5">
-                  <p className="text-xs font-medium text-warning mb-1">Unmatched rows:</p>
+                <div className="max-h-40 overflow-auto rounded border border-warning/30 p-2 bg-warning/5">
+                  <p className="text-xs font-medium text-warning mb-1">Unmatched rows (sample):</p>
                   {backfillPlan.unmatched.slice(0, 30).map((r, i) => (
                     <div key={i} className="text-xs text-muted-foreground font-mono">
-                      Row {r.rowIndex}: {r.initials} in {r.homeroom} → {r.externalNumber}
+                      Row {r.rowIndex}: section={r.homeroom || '—'} | #={r.rosterNumber || '—'} | derived={r.derivedCodedId || '—'} | init={r.initials} | board={r.externalNumber}
                     </div>
                   ))}
                   {backfillPlan.unmatched.length > 30 && (

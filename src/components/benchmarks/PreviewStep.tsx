@@ -71,15 +71,23 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
       )}
 
       {/* No-match diagnostic banner */}
-      {!studentsLoading && matchedCount === 0 && rows.length > 0 && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
-          <p className="font-medium text-destructive mb-1">Student IDs did not match any roster records</p>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            Your CSV likely uses board / SIS student numbers (e.g. <code className="px-1 bg-muted rounded">1027516</code>) but your roster uses coded IDs (e.g. <code className="px-1 bg-muted rounded">2AF-03</code>).
-            Backfill the <strong>External Student Number</strong> on each student via the Students tab (CSV upload or Edit), then re-run this import.
-          </p>
-        </div>
-      )}
+      {!studentsLoading && matchedCount === 0 && rows.length > 0 && (() => {
+        const uniqueIds = Array.from(new Set(rows.map(r => r.matchedStudentNumber || (r.rawValues?.[0] ?? '')).filter(Boolean))).slice(0, 6);
+        return (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+            <p className="font-medium text-destructive mb-1">Student IDs did not match any roster records</p>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              This benchmark file is using <strong>board IDs</strong> (e.g. <code className="px-1 bg-muted rounded">1027516</code>), but those board IDs are not yet present on your roster — your students are stored under coded IDs like <code className="px-1 bg-muted rounded">1AF-3</code>.
+            </p>
+            <p className="text-muted-foreground text-xs leading-relaxed mt-1">
+              Re-run the <strong>Backfill Board Numbers (whole-school)</strong> tool on the Students tab using a class list with <strong>Section Number</strong> + <strong>Student #</strong> columns. Then come back and re-import this file.
+            </p>
+            <p className="text-muted-foreground text-[11px] mt-1">
+              {rows.length} row(s) failed across approximately {new Set(rows.map(r => r.rawValues?.[0])).size} unique student IDs.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Homeroom mismatch info banner */}
       {!studentsLoading && homeroomMismatchCount > 0 && (
