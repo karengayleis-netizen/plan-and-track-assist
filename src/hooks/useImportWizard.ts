@@ -42,7 +42,7 @@ const emptyMapping = (): ColumnMapping => {
 
 export function useImportWizard(onComplete?: () => void) {
   const { user } = useAuth();
-  const { students } = useStudents();
+  const { students, loading: studentsLoading } = useStudents();
 
   const [state, setState] = useState<WizardState>({
     step: WS.ChooseSource,
