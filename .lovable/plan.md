@@ -1,126 +1,70 @@
 
-Fix the failed Acadience import by correcting the upstream board-number backfill, not the benchmark CSV parser.
 
-## What’s actually happening
+## Make the backfill failure visible — add diagnostics + roster coverage indicator
 
-The benchmark file itself is valid:
-- it has a proper `Student Number` column
-- the wizard is already reading those values correctly
-- the importer already tries `stableStudentId -> studentNumber -> externalStudentNumber`
+We've changed the matcher twice and we're still guessing. The 448 failed rows all reference real board IDs (`1027516`, `1035148`...), and the only way these still fail is if the matching `externalStudentNumber` was never written to those students. Let's stop guessing and surface the truth in the UI.
 
-So if all 448 rows say “No student match found,” the likely problem is that the earlier whole-school backfill did not populate `externalStudentNumber` for the students in this file.
+### What we'll add
 
-The strongest clue is the uploaded class-list workbook structure:
-- `Student #`
-- `Student Initials`
-- `Student Number` (board ID)
-- `Section Number`
+**1. Roster coverage indicator on the Students tab**
+A small stat card at the top of the Students tab:
 
-Your roster stores students as coded IDs like `1AF-3`, `12E-7`, etc. That means the workbook already contains a stronger matching key than initials:
-`Section Number + Student #`
+> **Board IDs backfilled: 47 / 252 students (19%)**
 
-Current backfill logic only matches by `initials + homeroom`, so any initials mismatch, duplicate initials, or formatting drift leaves the board number unapplied. Then the benchmark import has nothing to match against.
+So you can see at a glance whether the backfill actually populated `externalStudentNumber` across the roster, without opening Firebase Console.
 
-## Implementation plan
+**2. "Detected columns" panel in the backfill upload preview**
+Before showing the match summary, show what the parser actually saw in your file:
 
-### 1. Upgrade whole-school backfill matching to use the roster’s real key
-Update `src/lib/backfillParser.ts` so it also detects and reads the `Student #` column.
+```
+Detected columns from your file:
+  • Initials column      → "Student Initials"   ✓
+  • Board number column  → "Student Number"     ✓
+  • Section/Homeroom     → "Section Number"     ✓
+  • Roster ordinal (#)   → NOT FOUND  ✗ ← this is why nothing matched by coded ID
+  • Grade column         → "Grade"              ✓
+```
 
-New matching order:
-1. `stableStudentId === "${Section Number}-${Student #}"`
-2. `studentNumber === "${Section Number}-${Student #}"`
-3. fallback: `initials + homeroom`
-4. optional tiebreaker: `grade`
+If "Roster ordinal" is `NOT FOUND`, the derived-ID match path can't run and everything falls back to fragile initials matching. This single line will tell us the answer immediately.
 
-This makes the backfill deterministic for students created through the class-roster uploader, which already builds IDs in that same format.
+**3. Show 5 sample rows the parser actually built**
+Right under detected columns, show the first 5 parsed rows with all extracted fields, so you can verify the parser read the right cells:
 
-### 2. Expand the parser schema for the workbook you uploaded
-In `src/lib/backfillParser.ts`:
-- add header aliases for the roster ordinal column:
-  - `student #`
-  - `student # `
-  - `student number in class`
-  - `roster number`
-  - `number`
-- keep existing aliases for:
-  - initials
-  - board/external student number
-  - section/homeroom
-  - grade
+```
+Sample parsed rows:
+  Row 2: section="1AF" #="1" initials="SKB" board="1027516" → derives ID "1AF-1"
+  Row 3: section="1AF" #="2" initials="JTM" board="1035148" → derives ID "1AF-2"
+  ...
+```
 
-Store both values separately:
-- `rosterNumber` = classroom ordinal (`1`, `2`, `3`)
-- `externalNumber` = board ID (`1027516`)
+**4. Show the first 10 unmatched rows in full**
+Currently the dialog shows counts. Switch the unmatched section to a small table with: row #, section, ordinal #, initials, derived ID, board ID, and the reason — exactly the info needed to compare against the actual roster.
 
-This avoids today’s ambiguity where “Student Number” can mean two different things depending on the file.
+**5. Benchmark wizard: list unique unmatched IDs, not just row count**
+On the failed-rows screen, add a one-line summary:
 
-### 3. Make the backfill preview explain how each match was found
-Update `src/components/tabs/StudentsTab.tsx` preview dialog to break matched rows into:
-- matched by `Section + Student #`
-- matched by `Initials + Homeroom`
-- already correct
-- unmatched
-- ambiguous
+> **448 failed rows represent 51 unique student IDs.**
+> First 10 unmatched IDs: 1027516, 1035148, 1046969, 1049989, 1050879, ...
+> Of these, 0 are present as `externalStudentNumber` on any student in the roster.
 
-Also show a few sample unmatched rows with all useful fields:
-- row number
-- section
-- student #
-- initials
-- board number
+Then it's obvious whether the issue is "backfill didn't reach these students" vs. "matcher has a bug."
 
-That will make it obvious whether failures are due to missing roster numbers, wrong homerooms, or initials drift.
+### Files to update
 
-### 4. Improve backfill diagnostics before commit
-In the same preview dialog, add warnings for:
-- rows missing `Student #`
-- rows where `Section Number` is blank
-- rows where the derived coded ID (example `1AF-3`) does not exist in the current roster
-- rows that only matched by initials fallback
+- `src/components/tabs/StudentsTab.tsx` — roster coverage stat at top; richer backfill preview dialog (detected columns, sample parsed rows, full unmatched table)
+- `src/lib/backfillParser.ts` — return `detectedColumns` (which header was picked for each field, or `null`) and `sampleRows` (first 5 parsed `BackfillRow`s) on `BackfillParseResult`
+- `src/components/benchmarks/PreviewStep.tsx` — unique unmatched ID summary with roster cross-check
 
-This turns the backfill step into a real preflight check instead of a best-effort update.
+### What this does NOT change
 
-### 5. Make the benchmark preview message point to incomplete backfill coverage
-Update `src/components/benchmarks/PreviewStep.tsx` so when `matchedCount === 0`, the warning is more specific:
-
-Instead of only saying “backfill External Student Number,” show:
-- this benchmark file is using board IDs
-- those board IDs are still not present on the roster
-- re-run the whole-school backfill using `Section Number + Student #`
-
-Optionally add a short summary of unique unmatched student IDs instead of only row counts, because 448 failed rows may represent far fewer unique students.
-
-### 6. Keep benchmark import matching logic as-is
-No change needed to the benchmark matcher order in `src/hooks/useImportWizard.ts` unless a tiny normalization helper is added for safety.
-
-The important part is getting `externalStudentNumber` filled correctly on the roster first.
-
-## Files to update
-
-- `src/lib/backfillParser.ts`
-  - parse `Student #`
-  - distinguish roster number vs board number
-  - implement stronger match order
-- `src/components/tabs/StudentsTab.tsx`
-  - richer preview summary
-  - unmatched diagnostics
-  - match-source visibility
-- `src/components/benchmarks/PreviewStep.tsx`
-  - clearer “incomplete backfill” message for zero-match imports
-
-## Expected result
-
-After this change:
-1. Upload the same class-list workbook again in **Backfill Board Numbers (whole-school)**
-2. The system matches students primarily by derived coded ID like `1AF-3`
-3. `externalStudentNumber` is filled for the missing students
-4. Re-run the Acadience import
-5. The benchmark file matches by board ID and the 448 rows import normally
-
-## Technical details
-
-- No Firestore rule changes
+- No matcher logic changes
+- No data writes
 - No schema changes
-- No backend changes
-- This is a front-end matching and diagnostics fix
-- The fix is low-risk because it strengthens an existing admin-only backfill tool instead of changing stored benchmark logic
+- No Firestore rule changes
+
+This is purely diagnostic instrumentation so we can see what's actually happening and fix the real cause on the next pass.
+
+### Expected outcome
+
+After this ships, re-upload the workbook in **Backfill Board Numbers**. The dialog will tell us in plain text which header was missed (almost certainly the ordinal column), or that the derived IDs don't exist in the roster. Then the fix is one line — either a new alias or a roster ID format adjustment — instead of another round of speculation.
+
