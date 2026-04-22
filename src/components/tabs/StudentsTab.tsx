@@ -380,10 +380,13 @@ export function StudentsTab() {
     if (!file) return;
     setBackfillBusy(true);
     try {
-      const { rows, warnings } = await parseBackfillFile(file);
+      const { rows, warnings, detectedColumns, sampleRows } = await parseBackfillFile(file);
+      setBackfillDetected(detectedColumns);
+      setBackfillSampleRows(sampleRows);
       if (rows.length === 0) {
         toast.error('No usable rows found. Check that the file has Initials, Student Number, and Section columns.');
         setBackfillWarnings(warnings);
+        setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
         return;
       }
       const plan = buildMatchPlan(rows, students.map(s => ({
