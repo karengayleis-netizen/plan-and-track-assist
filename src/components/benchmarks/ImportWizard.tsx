@@ -57,6 +57,8 @@ export function ImportWizard({ open, onOpenChange, onComplete }: ImportWizardPro
             onImport={wizard.runImport}
             importing={state.importing}
             onBack={() => wizard.setStep(WizardStep.MapColumns)}
+            studentsLoading={wizard.studentsLoading}
+            classCodeMapped={state.columnMapping.classCode >= 0}
           />
         );
       case WizardStep.ImportResults:
