@@ -151,7 +151,7 @@ export function useImportWizard(onComplete?: () => void) {
     });
 
     setState(s => ({ ...s, importRows: matched, step: WS.PreviewValidate }));
-  }, [state.rawRows, state.columnMapping, students]);
+  }, [state.rawRows, state.columnMapping, students, studentsLoading]);
 
   // Step 4 → 5 Import
   const runImport = useCallback(async () => {
