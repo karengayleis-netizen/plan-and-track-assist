@@ -325,6 +325,7 @@ export function useImportWizard(onComplete?: () => void) {
   return {
     state,
     errorSummary,
+    studentsLoading,
     setStep,
     selectSource,
     uploadFile,
