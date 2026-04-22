@@ -373,6 +373,49 @@ export function StudentsTab() {
 
   const selectedStudents = filteredStudents.filter(s => selectedIds.has(s.id));
 
+  const handleBackfillFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBackfillBusy(true);
+    try {
+      const { rows, warnings } = await parseBackfillFile(file);
+      if (rows.length === 0) {
+        toast.error('No usable rows found. Check that the file has Initials, Student Number, and Section columns.');
+        setBackfillWarnings(warnings);
+        return;
+      }
+      const plan = buildMatchPlan(rows, students);
+      setBackfillPlan(plan);
+      setBackfillWarnings(warnings);
+    } catch (err) {
+      console.error('[backfill] parse error', err);
+      toast.error('Failed to parse file');
+    } finally {
+      setBackfillBusy(false);
+      if (backfillInputRef.current) backfillInputRef.current.value = '';
+    }
+  };
+
+  const handleConfirmBackfill = async () => {
+    if (!backfillPlan) return;
+    setBackfillCommitting(true);
+    let ok = 0;
+    let fail = 0;
+    for (const m of backfillPlan.matched) {
+      try {
+        await updateStudent(m.studentId, { externalStudentNumber: m.row.externalNumber });
+        ok++;
+      } catch (e) {
+        console.error('[backfill] update failed', m, e);
+        fail++;
+      }
+    }
+    setBackfillCommitting(false);
+    setBackfillPlan(null);
+    if (ok > 0) toast.success(`Backfilled ${ok} board number${ok === 1 ? '' : 's'}`);
+    if (fail > 0) toast.error(`${fail} update${fail === 1 ? '' : 's'} failed`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Class Selection & CSV Upload */}
