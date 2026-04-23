@@ -1,60 +1,146 @@
 
+Fix the benchmark wizard so `studentIdentifier` can only come from an approved board-ID header, and stop any stale mapping/template/fallback from reintroducing ordinal values.
 
-## Fix: stop auto-mapping "Student #" (roster ordinal) as the student identifier
+## What this build will do
 
-### Root cause
+The uploaded CSV already contains a strong `Student Number` header with real board IDs like `1060214`, `1127726`, `1048492`. It does not need guessing. If the wizard is still showing `1, 2, 3...`, the bug is now in mapping enforcement or downstream fallback, not the CSV itself.
 
-In `src/lib/csvParser.ts`, the `studentIdentifier` aliases list includes the bare token `'number'`. The Acadience export has a `Student #` column (the in-class ordinal: 1, 2, 3...) that appears **before** `Student Number` (the actual board ID). After the previous fix added `Student #` aliases for `classCode`/backfill awareness, `Student #` now also normalizes to something that collides — and `'number'` matches it first.
+## Implementation
 
-Result: the wizard reads `1, 2, 3, ...` as the student identifier instead of `1027516, 1035148, ...`. None of those tiny numbers match any roster ID, so all 448 rows fail.
+### 1) Lock `studentIdentifier` to a strict allow-list in `src/lib/csvParser.ts`
+Replace the current broad alias handling for `studentIdentifier` with an explicit approved list only:
 
-The CSV columns for assessment, score, date, and homeroom map correctly — which exactly matches what you reported.
+Approved headers:
+- `student number`
+- `studentnumber`
+- `student_number`
+- `board student number`
+- `board number`
+- `board id`
+- `student id`
+- `student_id`
+- `external student number`
+- `externalstudentnumber`
+- `sis student number`
 
-### The fix
+Explicit deny list:
+- `student #`
+- `student#`
+- `number`
+- `#`
+- `roster number`
+- `roster #`
+- `class number`
+- `seat number`
+- `student number in class`
+- `student no. in class`
+- `line number`
+- `row number`
 
-**1. `src/lib/csvParser.ts` — tighten `studentIdentifier` aliases**
+Rules:
+- deny-listed headers can never be selected for `studentIdentifier`
+- no “contains number” logic
+- no numeric-column fallback
+- no “first matching-ish column” fallback
+- if no approved header exists, leave `studentIdentifier = -1`
 
-Remove the over-broad `'number'` alias and explicitly exclude roster-ordinal headers:
+### 2) Centralize identifier validation so every path uses the same rule
+Add a small helper in `csvParser.ts` that resolves and validates the identifier mapping from:
+- detected headers
+- manual user selection
+- saved template selection
 
-- Drop `'number'` from `studentIdentifier` aliases.
-- Keep the strong, unambiguous ones: `student number`, `studentnumber`, `student_number`, `student id`, `student_id`, `pupil id`, `stable id`, `stablestudentid`, `stable_student_id`, `id`, `board number`, `board id`, `external student number`.
-- Add an explicit deny-list for roster-ordinal headers so they can never be picked as identifier: `student #`, `student#`, `roster number`, `roster #`, `student number in class`, `class number`, `seat number`, `#`.
+This helper should return:
+- mapped header name
+- mapped column index
+- validity status
+- reason if invalid (`denied header`, `not in approved allow-list`, `unmapped`)
 
-**2. `src/lib/csvParser.ts` — make `detectColumnMapping` skip denied headers**
+That makes detection, preview, import, and template application all enforce the exact same rule.
 
-When iterating headers for `studentIdentifier`, if the header (lowercased/trimmed) is in the deny-list, skip it even if a loose alias would match. This guarantees `Student #` is never auto-selected as the identifier, regardless of column order.
+### 3) Revalidate templates and manual mappings in `src/hooks/useImportWizard.ts`
+Even if auto-detection is fixed, an old saved template can still map the wrong column by index.
 
-**3. `src/components/benchmarks/MappingStep.tsx` — surface the conflict**
+Update the wizard flow so that:
+- after file upload, detected mapping is validated before storing state
+- when a template is applied, its `studentIdentifier` index is rechecked against the current file’s headers
+- if the template points to a denied or non-approved header, clear `studentIdentifier` back to `-1`
+- on `confirmMapping`, do not proceed if `studentIdentifier` is invalid or unmapped
 
-If the file contains both a roster-ordinal column (`Student #`) and a board-ID column (`Student Number`), show a small inline hint under the Student Identifier dropdown:
+Behavior change:
+- the wizard must stop and force manual mapping instead of guessing
+- preview/import cannot run with an invalid identifier column
 
-> Detected both `Student #` (roster ordinal) and `Student Number` (board ID). Using `Student Number`. Change here if needed.
+### 4) Make the mapping screen explicit in `src/components/benchmarks/MappingStep.tsx`
+Improve the identifier field UI so the user can see exactly what is happening.
 
-This makes the auto-mapping decision visible and overridable.
+Add:
+- the exact notice requested when both columns exist:
+  `Detected Student # (roster ordinal) and Student Number (board ID). Using Student Number.`
+- a blocking inline error under the Student Number field when no approved identifier is mapped:
+  `No valid student identifier column was found automatically. Please select Student Number / board ID manually.`
+- if a denied header is currently selected, show:
+  `Student # / Number / roster ordinal columns cannot be used for matching.`
 
-**4. `src/components/benchmarks/PreviewStep.tsx` — improve the unmatched-IDs sample**
+Also make the Continue button require:
+- all required fields mapped
+- `studentIdentifier` specifically mapped to an approved header
 
-The current "first 10 unmatched IDs" snippet reads from `rawValues[0]`, which is whichever column happens to be first — not necessarily the mapped identifier. Change it to read from `rawValues[columnMapping.studentIdentifier]` so the diagnostic always shows the actual IDs the matcher tried.
+### 5) Remove identifier fallbacks from preview/import diagnostics
+Update `src/components/benchmarks/PreviewStep.tsx` and the wizard flow so diagnostics use only the real mapped identifier column.
 
-This requires passing `columnMapping` (or a resolved `identifierColumnIndex`) from `ImportWizard` → `PreviewStep`.
+Changes:
+- no `rawValues[0]`
+- no fallback to column `0`
+- no fallback to “first numeric-looking column”
+- no fallback when `identifierColumnIndex` is missing
 
-### Files to update
+If `studentIdentifier` is not valid:
+- show a blocking banner instead of unmatched-ID analysis
+- explain that preview cannot determine matches until Student Number is mapped
 
-- `src/lib/csvParser.ts` — remove `'number'`; add deny-list; respect deny-list in `detectColumnMapping`
-- `src/components/benchmarks/MappingStep.tsx` — show conflict hint when both columns present
-- `src/components/benchmarks/PreviewStep.tsx` — read unmatched-IDs from the mapped identifier column
-- `src/components/benchmarks/ImportWizard.tsx` — pass identifier column index to `PreviewStep`
+For unmatched diagnostics, display:
+- mapped identifier header name
+- mapped column index
+- first 5 values from that mapped column
+- unique unmatched IDs from that mapped column only
 
-### Out of scope
+### 6) Add debug logging at preview/import time in `src/hooks/useImportWizard.ts`
+Add explicit console logging during `confirmMapping` and `runImport`:
 
-- No matcher logic changes in `useImportWizard.ts` — it's already correct.
-- No backfill changes — the previous backfill work stays.
-- No Firestore, schema, or rule changes.
+Log:
+- detected studentIdentifier header name
+- detected studentIdentifier column index
+- first 5 values from the mapped column
+- whether the mapping came from auto-detect, manual selection, or template
+- whether the mapped header passed validation
 
-### Expected outcome
+This will make it immediately obvious whether the wizard is still reading `1,2,3` / `K,1,2` or the real board IDs.
 
-Re-uploading the same Acadience CSV (no other action needed):
-- The wizard auto-maps `Student Number` (board ID) — not `Student #` (1, 2, 3) — as the identifier.
-- The 448 rows match against `externalStudentNumber` on the roster as intended.
-- The diagnostic banner, if it ever shows again, will list real board IDs (`1027516`, ...) instead of `1, 2, 3`.
+### 7) Improve failed-row visibility in `src/components/benchmarks/ResultsStep.tsx`
+The current failed-row preview only shows the first few original columns, which can hide the actual identifier being used.
 
+Update it so failed rows include:
+- the mapped identifier header name
+- the identifier value from that mapped column
+- clearer context when the identifier mapping was invalid vs unmatched in roster
+
+This makes post-import debugging align with the actual matching column.
+
+## Files to update
+
+- `src/lib/csvParser.ts`
+- `src/hooks/useImportWizard.ts`
+- `src/components/benchmarks/MappingStep.tsx`
+- `src/components/benchmarks/PreviewStep.tsx`
+- `src/components/benchmarks/ResultsStep.tsx`
+- `src/components/benchmarks/ImportWizard.tsx` if needed to pass header/index metadata cleanly
+
+## Expected outcome
+
+With the uploaded CSV:
+- the wizard auto-selects `Student Number`
+- the preview debug sample shows board IDs like `1060214`, `1127726`, `1048492`
+- it never selects grade/ordinal-style values like `1, 2, 3`
+- if a valid ID column is missing, the wizard stops and requires manual mapping
+- matching then runs against roster `externalStudentNumber` / `studentNumber` using the real board ID column only
