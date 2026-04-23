@@ -31,7 +31,7 @@ const presets: Record<ImportSource, SourcePreset> = {
     description: 'Import DIBELS literacy screening data. Default family: Reading.',
     assessmentFamily: 'reading',
     suggestedHeaders: {
-      studentIdentifier: ['Student Number', 'Student ID', 'Number'],
+      studentIdentifier: ['Student Number', 'Student ID', 'Board Number', 'External Student Number'],
       assessmentType: ['Measure', 'Subtest'],
       score: ['Score', 'Composite'],
       date: ['Date', 'Assessment Date'],
