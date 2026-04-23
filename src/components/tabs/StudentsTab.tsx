@@ -51,6 +51,9 @@ export function StudentsTab() {
   const [backfillDetected, setBackfillDetected] = useState<DetectedColumns | null>(null);
   const [backfillSampleRows, setBackfillSampleRows] = useState<BackfillRow[]>([]);
   const [backfillCommitting, setBackfillCommitting] = useState(false);
+  const [backfillTraceQuery, setBackfillTraceQuery] = useState('');
+  const [backfillResults, setBackfillResults] = useState<Array<{ studentId: string; studentNumber: string; externalNumber: string; status: 'updated' | 'failed'; error?: string }> | null>(null);
+  const [backfillVerifyMisses, setBackfillVerifyMisses] = useState<Array<{ studentId: string; studentNumber: string; expected: string }>>([]);
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
