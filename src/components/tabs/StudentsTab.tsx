@@ -382,37 +382,60 @@ export function StudentsTab() {
 
   const selectedStudents = filteredStudents.filter(s => selectedIds.has(s.id));
 
+  const runBackfillParse = async (file: File, override: string | null) => {
+    const { rows, warnings, detectedColumns, sampleRows, allHeaders } = await parseBackfillFile(
+      file,
+      override ? { externalNumber: override } : undefined,
+    );
+    setBackfillDetected(detectedColumns);
+    setBackfillSampleRows(sampleRows);
+    setBackfillAllHeaders(allHeaders);
+    if (rows.length === 0) {
+      setBackfillWarnings(warnings);
+      setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
+      return;
+    }
+    const plan = buildMatchPlan(rows, students.map(s => ({
+      id: s.id,
+      initials: s.initials,
+      homeroom: s.homeroom,
+      grade: s.grade,
+      externalStudentNumber: s.externalStudentNumber,
+      stableStudentId: s.stableStudentId,
+      studentNumber: s.studentNumber,
+    })));
+    setBackfillPlan(plan);
+    setBackfillWarnings(warnings);
+  };
+
   const handleBackfillFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setBackfillBusy(true);
+    setBackfillFile(file);
+    setBackfillColumnOverride(null);
     try {
-      const { rows, warnings, detectedColumns, sampleRows } = await parseBackfillFile(file);
-      setBackfillDetected(detectedColumns);
-      setBackfillSampleRows(sampleRows);
-      if (rows.length === 0) {
-        toast.error('No usable rows found. Check that the file has Initials, Student Number, and Section columns.');
-        setBackfillWarnings(warnings);
-        setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
-        return;
-      }
-      const plan = buildMatchPlan(rows, students.map(s => ({
-        id: s.id,
-        initials: s.initials,
-        homeroom: s.homeroom,
-        grade: s.grade,
-        externalStudentNumber: s.externalStudentNumber,
-        stableStudentId: s.stableStudentId,
-        studentNumber: s.studentNumber,
-      })));
-      setBackfillPlan(plan);
-      setBackfillWarnings(warnings);
+      await runBackfillParse(file, null);
     } catch (err) {
       console.error('[backfill] parse error', err);
       toast.error('Failed to parse file');
     } finally {
       setBackfillBusy(false);
       if (backfillInputRef.current) backfillInputRef.current.value = '';
+    }
+  };
+
+  const handlePickBoardColumn = async (header: string) => {
+    if (!backfillFile) return;
+    setBackfillReparsing(true);
+    setBackfillColumnOverride(header);
+    try {
+      await runBackfillParse(backfillFile, header);
+    } catch (err) {
+      console.error('[backfill] reparse error', err);
+      toast.error('Failed to re-parse with selected column');
+    } finally {
+      setBackfillReparsing(false);
     }
   };
 
