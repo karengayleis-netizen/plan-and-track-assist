@@ -415,21 +415,67 @@ export function StudentsTab() {
   const handleConfirmBackfill = async () => {
     if (!backfillPlan) return;
     setBackfillCommitting(true);
-    let ok = 0;
-    let fail = 0;
+    setBackfillResults(null);
+    setBackfillVerifyMisses([]);
+    const results: Array<{ studentId: string; studentNumber: string; externalNumber: string; status: 'updated' | 'failed'; error?: string }> = [];
     for (const m of backfillPlan.matched) {
+      const studentDoc = students.find(s => s.id === m.studentId);
+      const studentNumber = studentDoc?.studentNumber || '(unknown)';
       try {
         await updateStudent(m.studentId, { externalStudentNumber: m.row.externalNumber });
-        ok++;
+        results.push({ studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, status: 'updated' });
       } catch (e) {
-        console.error('[backfill] update failed', m, e);
-        fail++;
+        const error = e instanceof Error ? e.message : String(e);
+        console.error('[backfill] update failed', { studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, error }, e);
+        results.push({ studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, status: 'failed', error });
       }
     }
+    const ok = results.filter(r => r.status === 'updated').length;
+    const fail = results.filter(r => r.status === 'failed').length;
+    console.log('[backfill] write results', { ok, fail, results });
+    setBackfillResults(results);
+
+    // Re-fetch and verify writes actually persisted
+    try {
+      await refetch();
+    } catch (e) {
+      console.warn('[backfill] refetch failed', e);
+    }
     setBackfillCommitting(false);
-    setBackfillPlan(null);
+
     if (ok > 0) toast.success(`Backfilled ${ok} board number${ok === 1 ? '' : 's'}`);
     if (fail > 0) toast.error(`${fail} update${fail === 1 ? '' : 's'} failed`);
+  };
+
+  // Verify writes after refetch — runs reactively when students reload
+  // Compare results against fresh roster
+  const verifyBackfillResults = (results: typeof backfillResults) => {
+    if (!results) return [];
+    const misses: Array<{ studentId: string; studentNumber: string; expected: string }> = [];
+    for (const r of results) {
+      if (r.status !== 'updated') continue;
+      const fresh = students.find(s => s.id === r.studentId);
+      const current = (fresh?.externalStudentNumber || '').trim();
+      if (!current || current !== r.externalNumber.trim()) {
+        misses.push({ studentId: r.studentId, studentNumber: r.studentNumber, expected: r.externalNumber });
+      }
+    }
+    return misses;
+  };
+
+  const downloadBackfillResultsCsv = () => {
+    if (!backfillResults) return;
+    const header = 'studentId,studentNumber,externalNumber,status,error\n';
+    const rows = backfillResults
+      .map(r => `${r.studentId},${r.studentNumber},${r.externalNumber},${r.status},"${(r.error || '').replace(/"/g, '""')}"`)
+      .join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backfill-results-${new Date().toISOString().slice(0, 19)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // Roster coverage stats for board ID backfill
