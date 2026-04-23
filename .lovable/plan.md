@@ -1,146 +1,87 @@
 
-Fix the benchmark wizard so `studentIdentifier` can only come from an approved board-ID header, and stop any stale mapping/template/fallback from reintroducing ordinal values.
 
-## What this build will do
+## Make backfill outcomes verifiable per-student
 
-The uploaded CSV already contains a strong `Student Number` header with real board IDs like `1060214`, `1127726`, `1048492`. It does not need guessing. If the wizard is still showing `1, 2, 3...`, the bug is now in mapping enforcement or downstream fallback, not the CSV itself.
+The matcher and writer code is correct in principle:
+- `handleConfirmBackfill` calls `updateStudent(studentId, { externalStudentNumber: ... })` for every row in `plan.matched`.
+- `updateStudent` writes to Firestore.
+- The schema accepts `externalStudentNumber`.
 
-## Implementation
+But for student `4F-14` you can see the field is still blank in Firestore. The current UI gives you only aggregate counts (matched / unmatched / ambiguous / already correct). It doesn't tell you which bucket `4F-14` landed in, or whether the Firestore write actually committed for that specific student. We're flying blind.
 
-### 1) Lock `studentIdentifier` to a strict allow-list in `src/lib/csvParser.ts`
-Replace the current broad alias handling for `studentIdentifier` with an explicit approved list only:
+### Root-cause hypotheses (in order of likelihood)
 
-Approved headers:
-- `student number`
-- `studentnumber`
-- `student_number`
-- `board student number`
-- `board number`
-- `board id`
-- `student id`
-- `student_id`
-- `external student number`
-- `externalstudentnumber`
-- `sis student number`
+1. **Row landed in `unmatched` or `ambiguous`** — the backfill file's row for that student didn't produce a `derivedCodedId = "4F-14"` (e.g. the "Section" cell wasn't `4F`, or "Student #" was missing/blank), and initials+homeroom matching also failed or was ambiguous. So no update was attempted and the silent skip never showed up.
+2. **Row landed in `alreadyCorrect`** — meaning the file's external number for that row matched what was already on the student. If the student had `externalStudentNumber: ""` and the file row also had an empty/whitespace external number, the trim-equality check treats them as equal and skips.
+3. **Write was attempted but failed** — `updateStudent` errors are swallowed into a generic toast count, with no per-student detail.
+4. **Wrong school context / filtered out of `students` array** — the student wasn't in the in-memory roster passed to `buildMatchPlan`, so it was unmatchable.
 
-Explicit deny list:
-- `student #`
-- `student#`
-- `number`
-- `#`
-- `roster number`
-- `roster #`
-- `class number`
-- `seat number`
-- `student number in class`
-- `student no. in class`
-- `line number`
-- `row number`
+### The fix — surface the truth, then fix the cause
 
-Rules:
-- deny-listed headers can never be selected for `studentIdentifier`
-- no “contains number” logic
-- no numeric-column fallback
-- no “first matching-ish column” fallback
-- if no approved header exists, leave `studentIdentifier = -1`
+**1. Add a per-student diagnostic lookup tool to the Backfill Preview dialog**
 
-### 2) Centralize identifier validation so every path uses the same rule
-Add a small helper in `csvParser.ts` that resolves and validates the identifier mapping from:
-- detected headers
-- manual user selection
-- saved template selection
+In `src/components/tabs/StudentsTab.tsx`, add a small input above the matched/unmatched cards: "Trace student by Student #" (e.g. type `4F-14`). It should report, against the current `backfillPlan`:
 
-This helper should return:
-- mapped header name
-- mapped column index
-- validity status
-- reason if invalid (`denied header`, `not in approved allow-list`, `unmapped`)
+- Is the student present in the in-memory roster? (`students.find(s => s.studentNumber === input)`)
+- If yes, what are its current `externalStudentNumber`, `homeroom`, `initials`, `id`?
+- Did any backfill row produce `derivedCodedId === "4F-14"`?
+- Which bucket did it land in (`matched` / `alreadyCorrect` / `unmatched` / `ambiguous`)?
+- For unmatched: show the closest-by-initials-and-homeroom file rows.
 
-That makes detection, preview, import, and template application all enforce the exact same rule.
+This makes "why didn't this one update?" a 5-second answer instead of a research project.
 
-### 3) Revalidate templates and manual mappings in `src/hooks/useImportWizard.ts`
-Even if auto-detection is fixed, an old saved template can still map the wrong column by index.
+**2. Tighten the `alreadyCorrect` check in `src/lib/backfillParser.ts`**
 
-Update the wizard flow so that:
-- after file upload, detected mapping is validated before storing state
-- when a template is applied, its `studentIdentifier` index is rechecked against the current file’s headers
-- if the template points to a denied or non-approved header, clear `studentIdentifier` back to `-1`
-- on `confirmMapping`, do not proceed if `studentIdentifier` is invalid or unmapped
+Change the equality so an empty/blank `externalStudentNumber` on the student is never treated as "already correct" when the file actually has a real board ID:
 
-Behavior change:
-- the wizard must stop and force manual mapping instead of guessing
-- preview/import cannot run with an invalid identifier column
+```ts
+const current = (chosen.externalStudentNumber || '').trim();
+const incoming = row.externalNumber.trim();
+if (current && current === incoming) {
+  alreadyCorrect.push(row);
+} else {
+  matched.push({ ... });
+}
+```
 
-### 4) Make the mapping screen explicit in `src/components/benchmarks/MappingStep.tsx`
-Improve the identifier field UI so the user can see exactly what is happening.
+Today, if `current` and `incoming` are both empty strings, the row gets skipped as "already correct" — which is wrong for our case.
 
-Add:
-- the exact notice requested when both columns exist:
-  `Detected Student # (roster ordinal) and Student Number (board ID). Using Student Number.`
-- a blocking inline error under the Student Number field when no approved identifier is mapped:
-  `No valid student identifier column was found automatically. Please select Student Number / board ID manually.`
-- if a denied header is currently selected, show:
-  `Student # / Number / roster ordinal columns cannot be used for matching.`
+**3. Per-row write logging in `handleConfirmBackfill` (StudentsTab.tsx)**
 
-Also make the Continue button require:
-- all required fields mapped
-- `studentIdentifier` specifically mapped to an approved header
+Instead of a simple `ok++ / fail++`, build an array of per-row results:
+```ts
+{ studentId, studentNumber, externalNumber, status: 'updated' | 'failed', error?: string }
+```
+Log the array to console and show a post-commit summary panel ("Updated 412 of 448 — 36 failed; expand for details") with a button to download the result list as CSV. This way, when the user says "it didn't update student X", we can prove it from the write log.
 
-### 5) Remove identifier fallbacks from preview/import diagnostics
-Update `src/components/benchmarks/PreviewStep.tsx` and the wizard flow so diagnostics use only the real mapped identifier column.
+**4. Re-fetch and verify after commit**
 
-Changes:
-- no `rawValues[0]`
-- no fallback to column `0`
-- no fallback to “first numeric-looking column”
-- no fallback when `identifierColumnIndex` is missing
+After the `for` loop completes in `handleConfirmBackfill`, call `refetch()` (already exists on the hook) and then re-check the previously-matched IDs against the new in-memory roster. If any matched row's student still has an empty `externalStudentNumber`, raise a red banner — that is the smoking gun for a Firestore-rule rejection.
 
-If `studentIdentifier` is not valid:
-- show a blocking banner instead of unmatched-ID analysis
-- explain that preview cannot determine matches until Student Number is mapped
+**5. Surface unmatched/ambiguous rows inline (not just counts)**
 
-For unmatched diagnostics, display:
-- mapped identifier header name
-- mapped column index
-- first 5 values from that mapped column
-- unique unmatched IDs from that mapped column only
+Add expandable lists in the Backfill Preview dialog:
+- "Show unmatched rows" → table of `initials | section | rosterNumber | externalNumber | derivedCodedId`
+- "Show ambiguous rows" → same plus the candidate IDs
 
-### 6) Add debug logging at preview/import time in `src/hooks/useImportWizard.ts`
-Add explicit console logging during `confirmMapping` and `runImport`:
+When the user can see that `4F-14` is sitting in the unmatched list with `derivedCodedId = "4F-14"` but the roster lookup failed, we'll know the issue is a roster vs. file mismatch on the coded ID itself (e.g. casing, hidden whitespace, or the student doc actually has `studentNumber: "4F-14 "` with a trailing space).
 
-Log:
-- detected studentIdentifier header name
-- detected studentIdentifier column index
-- first 5 values from the mapped column
-- whether the mapping came from auto-detect, manual selection, or template
-- whether the mapped header passed validation
+### Files to update
 
-This will make it immediately obvious whether the wizard is still reading `1,2,3` / `K,1,2` or the real board IDs.
+- `src/lib/backfillParser.ts` — fix the `alreadyCorrect` check so empty-vs-empty isn't "correct"
+- `src/components/tabs/StudentsTab.tsx` — add the trace-by-student-# input, per-row write log, post-commit verification refetch, and expandable unmatched/ambiguous lists in the Backfill Preview dialog
 
-### 7) Improve failed-row visibility in `src/components/benchmarks/ResultsStep.tsx`
-The current failed-row preview only shows the first few original columns, which can hide the actual identifier being used.
+### Out of scope
 
-Update it so failed rows include:
-- the mapped identifier header name
-- the identifier value from that mapped column
-- clearer context when the identifier mapping was invalid vs unmatched in roster
+- No schema, Firestore rule, or matcher-algorithm changes beyond the `alreadyCorrect` correctness fix.
+- No changes to the benchmark Import Wizard.
 
-This makes post-import debugging align with the actual matching column.
+### Expected outcome
 
-## Files to update
+Re-open the Backfill Preview with the same file, type `4F-14` into the trace input, and you'll see exactly:
+- whether the file produced a row for that student,
+- which bucket it ended up in,
+- and (after confirm) whether the Firestore write actually succeeded.
 
-- `src/lib/csvParser.ts`
-- `src/hooks/useImportWizard.ts`
-- `src/components/benchmarks/MappingStep.tsx`
-- `src/components/benchmarks/PreviewStep.tsx`
-- `src/components/benchmarks/ResultsStep.tsx`
-- `src/components/benchmarks/ImportWizard.tsx` if needed to pass header/index metadata cleanly
+From there the real fix is one specific cause — not another speculative pass.
 
-## Expected outcome
-
-With the uploaded CSV:
-- the wizard auto-selects `Student Number`
-- the preview debug sample shows board IDs like `1060214`, `1127726`, `1048492`
-- it never selects grade/ordinal-style values like `1, 2, 3`
-- if a valid ID column is missing, the wizard stops and requires manual mapping
-- matching then runs against roster `externalStudentNumber` / `studentNumber` using the real board ID column only
