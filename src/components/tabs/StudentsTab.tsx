@@ -54,6 +54,10 @@ export function StudentsTab() {
   const [backfillTraceQuery, setBackfillTraceQuery] = useState('');
   const [backfillResults, setBackfillResults] = useState<Array<{ studentId: string; studentNumber: string; externalNumber: string; status: 'updated' | 'failed'; error?: string }> | null>(null);
   const [backfillVerifyMisses, setBackfillVerifyMisses] = useState<Array<{ studentId: string; studentNumber: string; expected: string }>>([]);
+  const [backfillFile, setBackfillFile] = useState<File | null>(null);
+  const [backfillAllHeaders, setBackfillAllHeaders] = useState<string[]>([]);
+  const [backfillColumnOverride, setBackfillColumnOverride] = useState<string | null>(null);
+  const [backfillReparsing, setBackfillReparsing] = useState(false);
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
@@ -378,37 +382,60 @@ export function StudentsTab() {
 
   const selectedStudents = filteredStudents.filter(s => selectedIds.has(s.id));
 
+  const runBackfillParse = async (file: File, override: string | null) => {
+    const { rows, warnings, detectedColumns, sampleRows, allHeaders } = await parseBackfillFile(
+      file,
+      override ? { externalNumber: override } : undefined,
+    );
+    setBackfillDetected(detectedColumns);
+    setBackfillSampleRows(sampleRows);
+    setBackfillAllHeaders(allHeaders);
+    if (rows.length === 0) {
+      setBackfillWarnings(warnings);
+      setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
+      return;
+    }
+    const plan = buildMatchPlan(rows, students.map(s => ({
+      id: s.id,
+      initials: s.initials,
+      homeroom: s.homeroom,
+      grade: s.grade,
+      externalStudentNumber: s.externalStudentNumber,
+      stableStudentId: s.stableStudentId,
+      studentNumber: s.studentNumber,
+    })));
+    setBackfillPlan(plan);
+    setBackfillWarnings(warnings);
+  };
+
   const handleBackfillFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setBackfillBusy(true);
+    setBackfillFile(file);
+    setBackfillColumnOverride(null);
     try {
-      const { rows, warnings, detectedColumns, sampleRows } = await parseBackfillFile(file);
-      setBackfillDetected(detectedColumns);
-      setBackfillSampleRows(sampleRows);
-      if (rows.length === 0) {
-        toast.error('No usable rows found. Check that the file has Initials, Student Number, and Section columns.');
-        setBackfillWarnings(warnings);
-        setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
-        return;
-      }
-      const plan = buildMatchPlan(rows, students.map(s => ({
-        id: s.id,
-        initials: s.initials,
-        homeroom: s.homeroom,
-        grade: s.grade,
-        externalStudentNumber: s.externalStudentNumber,
-        stableStudentId: s.stableStudentId,
-        studentNumber: s.studentNumber,
-      })));
-      setBackfillPlan(plan);
-      setBackfillWarnings(warnings);
+      await runBackfillParse(file, null);
     } catch (err) {
       console.error('[backfill] parse error', err);
       toast.error('Failed to parse file');
     } finally {
       setBackfillBusy(false);
       if (backfillInputRef.current) backfillInputRef.current.value = '';
+    }
+  };
+
+  const handlePickBoardColumn = async (header: string) => {
+    if (!backfillFile) return;
+    setBackfillReparsing(true);
+    setBackfillColumnOverride(header);
+    try {
+      await runBackfillParse(backfillFile, header);
+    } catch (err) {
+      console.error('[backfill] reparse error', err);
+      toast.error('Failed to re-parse with selected column');
+    } finally {
+      setBackfillReparsing(false);
     }
   };
 
@@ -787,7 +814,7 @@ export function StudentsTab() {
       )}
 
       {/* Backfill Preview Dialog */}
-      <Dialog open={!!backfillPlan} onOpenChange={(open) => { if (!open) { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); setBackfillTraceQuery(''); setBackfillResults(null); setBackfillVerifyMisses([]); } }}>
+      <Dialog open={!!backfillPlan} onOpenChange={(open) => { if (!open) { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); setBackfillTraceQuery(''); setBackfillResults(null); setBackfillVerifyMisses([]); setBackfillFile(null); setBackfillAllHeaders([]); setBackfillColumnOverride(null); } }}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Backfill Preview</DialogTitle>
@@ -821,6 +848,41 @@ export function StudentsTab() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Manual board-number column picker */}
+              {backfillDetected && !backfillDetected.externalNumber && backfillAllHeaders.length > 0 && (
+                <div className="rounded-lg border border-warning/40 bg-warning/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold">
+                    Select the column that contains the board student number:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {backfillAllHeaders.filter(h => h && h.trim()).map(header => (
+                      <button
+                        key={header}
+                        type="button"
+                        disabled={backfillReparsing}
+                        onClick={() => handlePickBoardColumn(header)}
+                        className="focus:outline-none"
+                      >
+                        <Badge
+                          variant={backfillColumnOverride === header ? 'default' : 'outline'}
+                          className="cursor-pointer text-xs font-mono"
+                        >
+                          {header}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                  {backfillColumnOverride && backfillPlan && backfillPlan.matched.length === 0 && (
+                    <p className="text-[11px] text-warning">
+                      Selected column has no values that look like board IDs — try another.
+                    </p>
+                  )}
+                  {backfillReparsing && (
+                    <p className="text-[11px] text-muted-foreground">Re-parsing with selected column…</p>
+                  )}
                 </div>
               )}
 

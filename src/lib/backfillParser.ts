@@ -38,11 +38,19 @@ export interface BackfillParseResult {
 
 const HEADER_ALIASES = {
   initials: ['student initials', 'initials'],
-  externalNumber: ['student number', 'board number', 'external student number', 'sis id', 'board student number'],
+  externalNumber: [
+    'student number', 'board number', 'external student number', 'sis id', 'board student number',
+    'oen', 'ontario education number', 'student id', 'student id number',
+    'board id', 'board #', 'board no', 'board no.',
+  ],
   homeroom: ['section number', 'section', 'homeroom', 'class', 'class name'],
   rosterNumber: ['student #', 'student number in class', 'roster number', 'number', 'student no', 'student no.', '#'],
   grade: ['grade', 'year group'],
 };
+
+export interface BackfillOverrides {
+  externalNumber?: string;
+}
 
 export const normalizeInitials = (s: string): string =>
   (s || '').replace(/\./g, '').toUpperCase().trim();
@@ -73,12 +81,23 @@ interface SheetParseResult {
   headers: string[];
 }
 
-const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): SheetParseResult => {
+const parseSheet = (
+  rows: unknown[][],
+  sheetName: string,
+  warnings: string[],
+  overrides?: BackfillOverrides,
+): SheetParseResult => {
   if (rows.length < 2) return { rows: [], detected: { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null }, headers: [] };
   const headers = (rows[0] as unknown[]).map(c => (c == null ? '' : String(c)));
+  const lowerHeaders = headers.map(h => h.toString().toLowerCase().trim());
 
   const iInit = findHeaderIndex(headers, HEADER_ALIASES.initials);
-  const iExt = findHeaderIndex(headers, HEADER_ALIASES.externalNumber);
+  let iExt = findHeaderIndex(headers, HEADER_ALIASES.externalNumber);
+  if (overrides?.externalNumber) {
+    const target = overrides.externalNumber.toLowerCase().trim();
+    const idx = lowerHeaders.indexOf(target);
+    if (idx !== -1) iExt = idx;
+  }
   const iHome = findHeaderIndex(headers, HEADER_ALIASES.homeroom);
   const iRoster = findHeaderIndex(headers, HEADER_ALIASES.rosterNumber);
   const iGrade = findHeaderIndex(headers, HEADER_ALIASES.grade);
@@ -131,7 +150,7 @@ const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): S
   return { rows: out, detected, headers };
 };
 
-export async function parseBackfillFile(file: File): Promise<BackfillParseResult> {
+export async function parseBackfillFile(file: File, overrides?: BackfillOverrides): Promise<BackfillParseResult> {
   const warnings: string[] = [];
   const rows: BackfillRow[] = [];
   let detectedColumns: DetectedColumns = { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null };
@@ -155,7 +174,7 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
     for (const sheetName of wb.SheetNames) {
       const sheet = wb.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-      const result = parseSheet(json, sheetName, warnings);
+      const result = parseSheet(json, sheetName, warnings, overrides);
       rows.push(...result.rows);
       mergeDetected(result.detected);
       if (result.headers.length && !allHeaders.length) allHeaders = result.headers;
@@ -176,7 +195,7 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
       out.push(cur.trim());
       return out;
     });
-    const result = parseSheet(matrix, 'CSV', warnings);
+    const result = parseSheet(matrix, 'CSV', warnings, overrides);
     rows.push(...result.rows);
     mergeDetected(result.detected);
     allHeaders = result.headers;
