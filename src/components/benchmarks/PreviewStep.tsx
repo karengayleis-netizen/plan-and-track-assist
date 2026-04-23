@@ -74,9 +74,10 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
 
       {/* No-match diagnostic banner */}
       {!studentsLoading && matchedCount === 0 && rows.length > 0 && (() => {
-        // Collect unique unmatched student IDs from raw CSV
+        // Collect unique unmatched student IDs from the mapped identifier column
+        const idCol = typeof identifierColumnIndex === 'number' && identifierColumnIndex >= 0 ? identifierColumnIndex : 0;
         const uniqueUnmatchedIds = Array.from(
-          new Set(rows.map(r => (r.rawValues?.[0] ?? '').trim()).filter(Boolean))
+          new Set(rows.map(r => (r.rawValues?.[idCol] ?? '').trim()).filter(Boolean))
         );
         // Build roster ID set across all 3 identity fields
         const rosterIdSet = new Set<string>();
