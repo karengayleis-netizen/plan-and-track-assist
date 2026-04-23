@@ -59,6 +59,8 @@ export function StudentsTab() {
   const [backfillAllHeaders, setBackfillAllHeaders] = useState<string[]>([]);
   const [backfillColumnOverride, setBackfillColumnOverride] = useState<string | null>(null);
   const [backfillReparsing, setBackfillReparsing] = useState(false);
+  // Manual resolutions: rowIndex -> chosen studentId. Applied at Confirm time.
+  const [backfillManualResolutions, setBackfillManualResolutions] = useState<Record<number, string>>({});
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
