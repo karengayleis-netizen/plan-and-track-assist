@@ -81,12 +81,23 @@ interface SheetParseResult {
   headers: string[];
 }
 
-const parseSheet = (rows: unknown[][], sheetName: string, warnings: string[]): SheetParseResult => {
+const parseSheet = (
+  rows: unknown[][],
+  sheetName: string,
+  warnings: string[],
+  overrides?: BackfillOverrides,
+): SheetParseResult => {
   if (rows.length < 2) return { rows: [], detected: { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null }, headers: [] };
   const headers = (rows[0] as unknown[]).map(c => (c == null ? '' : String(c)));
+  const lowerHeaders = headers.map(h => h.toString().toLowerCase().trim());
 
   const iInit = findHeaderIndex(headers, HEADER_ALIASES.initials);
-  const iExt = findHeaderIndex(headers, HEADER_ALIASES.externalNumber);
+  let iExt = findHeaderIndex(headers, HEADER_ALIASES.externalNumber);
+  if (overrides?.externalNumber) {
+    const target = overrides.externalNumber.toLowerCase().trim();
+    const idx = lowerHeaders.indexOf(target);
+    if (idx !== -1) iExt = idx;
+  }
   const iHome = findHeaderIndex(headers, HEADER_ALIASES.homeroom);
   const iRoster = findHeaderIndex(headers, HEADER_ALIASES.rosterNumber);
   const iGrade = findHeaderIndex(headers, HEADER_ALIASES.grade);
