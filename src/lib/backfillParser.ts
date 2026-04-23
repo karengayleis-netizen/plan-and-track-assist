@@ -280,7 +280,9 @@ export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): 
       continue;
     }
 
-    if ((chosen.externalStudentNumber || '').trim() === row.externalNumber.trim()) {
+    const current = (chosen.externalStudentNumber || '').trim();
+    const incoming = row.externalNumber.trim();
+    if (current && current === incoming) {
       alreadyCorrect.push(row);
     } else {
       matched.push({
