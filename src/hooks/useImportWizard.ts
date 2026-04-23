@@ -3,7 +3,7 @@ import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './useAuth';
 import { useStudents } from './useStudents';
-import { parseCSV, detectColumnMapping, buildImportRows, generateErrorReportCSV, buildErrorSummary } from '@/lib/csvParser';
+import { parseCSV, detectColumnMapping, buildImportRows, generateErrorReportCSV, buildErrorSummary, validateStudentIdentifierMapping } from '@/lib/csvParser';
 import { getPreset } from '@/lib/importPresets';
 import type {
   ImportSource,
