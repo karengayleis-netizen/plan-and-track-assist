@@ -103,6 +103,10 @@ export function detectColumnMapping(headers: string[], source: ImportSource): Co
     const aliases = [...suggested.map(s => s.toLowerCase()), ...COLUMN_ALIASES[field]];
 
     for (let i = 0; i < headerLower.length; i++) {
+      // For studentIdentifier, never auto-select a known roster-ordinal header.
+      if (field === 'studentIdentifier' && STUDENT_IDENTIFIER_DENY_LIST.has(headerLower[i])) {
+        continue;
+      }
       if (aliases.includes(headerLower[i])) {
         mapping[field] = i;
         break;
