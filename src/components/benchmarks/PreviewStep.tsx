@@ -72,14 +72,23 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
         </div>
       )}
 
-      {/* No-match diagnostic banner */}
-      {!studentsLoading && matchedCount === 0 && rows.length > 0 && (() => {
-        // Collect unique unmatched student IDs from the mapped identifier column
-        const idCol = typeof identifierColumnIndex === 'number' && identifierColumnIndex >= 0 ? identifierColumnIndex : 0;
+      {/* Identifier mapping invalid — block diagnostics */}
+      {!studentsLoading && (typeof identifierColumnIndex !== 'number' || identifierColumnIndex < 0) && rows.length > 0 && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+          <p className="font-medium text-destructive mb-1">Student Number column is not mapped</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Preview cannot determine matches until the Student Number / board ID column is mapped. Go Back and select it on the Map Columns step.
+          </p>
+        </div>
+      )}
+
+      {/* No-match diagnostic banner — only when identifier IS mapped */}
+      {!studentsLoading && matchedCount === 0 && rows.length > 0 && typeof identifierColumnIndex === 'number' && identifierColumnIndex >= 0 && (() => {
+        const idCol = identifierColumnIndex;
+        const idHeader = rows[0]?.rawValues && idCol < rows[0].rawValues.length ? '' : '';
         const uniqueUnmatchedIds = Array.from(
           new Set(rows.map(r => (r.rawValues?.[idCol] ?? '').trim()).filter(Boolean))
         );
-        // Build roster ID set across all 3 identity fields
         const rosterIdSet = new Set<string>();
         (students ?? []).forEach(s => {
           if (s.externalStudentNumber) rosterIdSet.add(String(s.externalStudentNumber).trim());
@@ -92,10 +101,10 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
             <p className="font-medium text-destructive mb-1">Student IDs did not match any roster records</p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              <strong>{rows.length} failed rows</strong> represent <strong>{uniqueUnmatchedIds.length} unique student IDs</strong>.
+              Reading from mapped column index <strong>{idCol}</strong>{idHeader ? ` (“${idHeader}”)` : ''}. <strong>{rows.length} failed rows</strong> represent <strong>{uniqueUnmatchedIds.length} unique IDs</strong>.
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed mt-1">
-              First {sampleIds.length} unmatched IDs: <code className="px-1 bg-muted rounded text-[11px]">{sampleIds.join(', ')}</code>
+              First {sampleIds.length} unmatched IDs from the mapped column: <code className="px-1 bg-muted rounded text-[11px]">{sampleIds.join(', ')}</code>
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed mt-1">
               Of these, <strong className={presentInRoster === 0 ? 'text-destructive' : 'text-warning'}>{presentInRoster}</strong> are present on any student in the roster (as External, Stable, or Student Number).

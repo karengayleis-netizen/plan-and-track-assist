@@ -61,17 +61,31 @@ function parseLine(line: string): string[] {
 
 // ── Column Alias Detection ───────────────────────────────────────────────────
 
-// Headers that must NEVER be auto-selected as the student identifier.
-// These are roster ordinals (1, 2, 3...) — not board IDs.
-const STUDENT_IDENTIFIER_DENY_LIST = new Set([
-  'student #', 'student#', 'student no', 'student no.',
-  'roster number', 'roster #', 'roster no', 'roster',
-  'student number in class', 'class number', 'seat number', 'seat #',
-  'number', '#', 'no', 'no.',
+// Headers that must NEVER be auto-selected — or even manually selected — as
+// the student identifier. These are roster ordinals (1, 2, 3...) not board IDs.
+export const STUDENT_IDENTIFIER_DENY_LIST = new Set([
+  'student #', 'student#',
+  'number', '#',
+  'roster number', 'roster #',
+  'class number', 'seat number',
+  'student number in class', 'student no. in class',
+  'line number', 'row number',
+]);
+
+// The ONLY headers allowed to be auto-mapped as `studentIdentifier`.
+// No fuzzy matching, no "contains number", no fallbacks. Strict allow-list.
+export const STUDENT_IDENTIFIER_ALLOW_LIST = new Set([
+  'student number', 'studentnumber', 'student_number',
+  'board student number', 'board number', 'board id',
+  'student id', 'student_id',
+  'external student number', 'externalstudentnumber',
+  'sis student number',
 ]);
 
 const COLUMN_ALIASES: Record<InternalField, string[]> = {
-  studentIdentifier: ['student number', 'studentnumber', 'student_number', 'student id', 'student_id', 'id', 'pupil id', 'stable id', 'stablestudentid', 'stable_student_id', 'board number', 'board id', 'external student number'],
+  // studentIdentifier intentionally uses the strict allow-list above — this
+  // array is left empty so generic alias logic can never widen it.
+  studentIdentifier: [],
   assessmentType: ['type', 'measure', 'assessment', 'subtest', 'domain', 'skill', 'assessment type', 'assessment_type', 'test'],
   score: ['score', 'raw score', 'composite', 'percent', 'result', 'total', 'raw_score'],
   date: ['date', 'assessment date', 'completed on', 'assessment_date', 'test date', 'test_date'],
@@ -91,22 +105,30 @@ export function detectColumnMapping(headers: string[], source: ImportSource): Co
   const mapping: ColumnMapping = {} as ColumnMapping;
   const headerLower = headers.map(h => h.toLowerCase().trim());
 
-  // Initialize all fields to -1
   const allFields: InternalField[] = Object.keys(COLUMN_ALIASES) as InternalField[];
   for (const field of allFields) {
     mapping[field] = -1;
   }
 
-  // Try preset suggested headers first, then aliases
   for (const field of allFields) {
+    if (field === 'studentIdentifier') {
+      // Strict allow-list ONLY. No preset shortcut, no fuzzy match, no fallback.
+      // If no approved header exists, leave studentIdentifier = -1.
+      for (let i = 0; i < headerLower.length; i++) {
+        const h = headerLower[i];
+        if (STUDENT_IDENTIFIER_DENY_LIST.has(h)) continue;
+        if (STUDENT_IDENTIFIER_ALLOW_LIST.has(h)) {
+          mapping[field] = i;
+          break;
+        }
+      }
+      continue;
+    }
+
     const suggested = preset.suggestedHeaders[field] || [];
     const aliases = [...suggested.map(s => s.toLowerCase()), ...COLUMN_ALIASES[field]];
 
     for (let i = 0; i < headerLower.length; i++) {
-      // For studentIdentifier, never auto-select a known roster-ordinal header.
-      if (field === 'studentIdentifier' && STUDENT_IDENTIFIER_DENY_LIST.has(headerLower[i])) {
-        continue;
-      }
       if (aliases.includes(headerLower[i])) {
         mapping[field] = i;
         break;
@@ -115,6 +137,35 @@ export function detectColumnMapping(headers: string[], source: ImportSource): Co
   }
 
   return mapping;
+}
+
+// ── Student Identifier Validation ────────────────────────────────────────────
+
+export type IdentifierValidity =
+  | { valid: true; columnIndex: number; headerName: string }
+  | { valid: false; reason: 'unmapped' | 'denied' | 'not-allowed'; columnIndex: number; headerName: string };
+
+/**
+ * Centralized validation for the studentIdentifier mapping.
+ * Used by detection, manual selection, template application, preview, and import
+ * so they all enforce the exact same rule.
+ */
+export function validateStudentIdentifierMapping(
+  columnIndex: number,
+  headers: string[],
+): IdentifierValidity {
+  if (columnIndex < 0 || columnIndex >= headers.length) {
+    return { valid: false, reason: 'unmapped', columnIndex: -1, headerName: '' };
+  }
+  const headerName = headers[columnIndex] || '';
+  const h = headerName.toLowerCase().trim();
+  if (STUDENT_IDENTIFIER_DENY_LIST.has(h)) {
+    return { valid: false, reason: 'denied', columnIndex, headerName };
+  }
+  if (!STUDENT_IDENTIFIER_ALLOW_LIST.has(h)) {
+    return { valid: false, reason: 'not-allowed', columnIndex, headerName };
+  }
+  return { valid: true, columnIndex, headerName };
 }
 
 // ── Row Validation ───────────────────────────────────────────────────────────

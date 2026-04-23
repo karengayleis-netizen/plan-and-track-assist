@@ -3,7 +3,7 @@ import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './useAuth';
 import { useStudents } from './useStudents';
-import { parseCSV, detectColumnMapping, buildImportRows, generateErrorReportCSV, buildErrorSummary } from '@/lib/csvParser';
+import { parseCSV, detectColumnMapping, buildImportRows, generateErrorReportCSV, buildErrorSummary, validateStudentIdentifierMapping } from '@/lib/csvParser';
 import { getPreset } from '@/lib/importPresets';
 import type {
   ImportSource,
@@ -70,6 +70,24 @@ export function useImportWizard(onComplete?: () => void) {
       const { headers, rows } = parseCSV(text);
       const source = state.source || 'generic_csv';
       const mapping = detectColumnMapping(headers, source);
+
+      const idValidity = validateStudentIdentifierMapping(mapping.studentIdentifier, headers);
+      let reasonStr = 'ok';
+      if (idValidity.valid === false) {
+        reasonStr = idValidity.reason;
+      }
+      const sampleVals = idValidity.valid
+        ? rows.slice(0, 5).map(r => r[idValidity.columnIndex]?.trim() || '')
+        : [];
+      console.log('[ImportWizard] Auto-detect studentIdentifier:', {
+        source: 'auto-detect',
+        columnIndex: mapping.studentIdentifier,
+        headerName: idValidity.headerName,
+        valid: idValidity.valid,
+        reason: reasonStr,
+        first5Values: sampleVals,
+      });
+
       setState(s => ({
         ...s,
         fileName: file.name,
@@ -95,6 +113,28 @@ export function useImportWizard(onComplete?: () => void) {
       console.warn('[ImportWizard] confirmMapping called before students loaded — skipping');
       return;
     }
+
+    // Hard block: identifier must be valid (in allow-list, not in deny-list).
+    const idValidity = validateStudentIdentifierMapping(state.columnMapping.studentIdentifier, state.headers);
+    let validReason = 'ok';
+    if (idValidity.valid === false) {
+      validReason = idValidity.reason;
+    }
+    const sample = idValidity.valid
+      ? state.rawRows.slice(0, 5).map(r => r[idValidity.columnIndex]?.trim() || '')
+      : [];
+    console.log('[ImportWizard] confirmMapping studentIdentifier check:', {
+      columnIndex: state.columnMapping.studentIdentifier,
+      headerName: idValidity.headerName,
+      valid: idValidity.valid,
+      reason: validReason,
+      first5Values: sample,
+    });
+    if (!idValidity.valid) {
+      console.warn('[ImportWizard] confirmMapping blocked — invalid studentIdentifier mapping');
+      return;
+    }
+
     // Build rows + match students by studentNumber
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
@@ -156,6 +196,27 @@ export function useImportWizard(onComplete?: () => void) {
   // Step 4 → 5 Import
   const runImport = useCallback(async () => {
     if (!user || !state.source) return;
+
+    // Hard block: identifier mapping must still be valid before importing.
+    const idValidity = validateStudentIdentifierMapping(state.columnMapping.studentIdentifier, state.headers);
+    let runReason = 'ok';
+    if (idValidity.valid === false) {
+      runReason = idValidity.reason;
+    }
+    const sample = idValidity.valid
+      ? state.rawRows.slice(0, 5).map(r => r[idValidity.columnIndex]?.trim() || '')
+      : [];
+    console.log('[ImportWizard] runImport studentIdentifier check:', {
+      columnIndex: state.columnMapping.studentIdentifier,
+      headerName: idValidity.headerName,
+      valid: idValidity.valid,
+      reason: runReason,
+      first5Values: sample,
+    });
+    if (!idValidity.valid) {
+      console.warn('[ImportWizard] runImport blocked — invalid studentIdentifier mapping');
+      return;
+    }
 
     setState(s => ({ ...s, importing: true }));
 
@@ -254,7 +315,7 @@ export function useImportWizard(onComplete?: () => void) {
 
     setState(s => ({ ...s, result, importing: false, step: WS.ImportResults }));
     onComplete?.();
-  }, [user, state.source, state.importRows, state.columnMapping, state.headers, state.fileName, onComplete]);
+  }, [user, state.source, state.importRows, state.columnMapping, state.headers, state.fileName, state.rawRows, onComplete]);
 
   // Step 6: Templates
   const loadTemplates = useCallback(async () => {
@@ -274,7 +335,25 @@ export function useImportWizard(onComplete?: () => void) {
   }, [user?.schoolId, state.source]);
 
   const applyTemplate = useCallback((template: ImportTemplate) => {
-    setState(s => ({ ...s, columnMapping: template.columnMap }));
+    setState(s => {
+      const incoming = { ...template.columnMap };
+      // Revalidate the template's identifier choice against current file's headers.
+      const v = validateStudentIdentifierMapping(incoming.studentIdentifier, s.headers);
+      let tplReason = 'ok';
+      if (v.valid === false) tplReason = v.reason;
+      console.log('[ImportWizard] Template applied — studentIdentifier check:', {
+        source: 'template',
+        columnIndex: incoming.studentIdentifier,
+        headerName: v.headerName,
+        valid: v.valid,
+        reason: tplReason,
+      });
+      if (!v.valid) {
+        // Refuse to carry over a denied/non-allowed identifier mapping.
+        incoming.studentIdentifier = -1;
+      }
+      return { ...s, columnMapping: incoming };
+    });
   }, []);
 
   const saveTemplate = useCallback(async (name: string) => {
