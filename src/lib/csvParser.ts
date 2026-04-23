@@ -61,17 +61,31 @@ function parseLine(line: string): string[] {
 
 // ── Column Alias Detection ───────────────────────────────────────────────────
 
-// Headers that must NEVER be auto-selected as the student identifier.
-// These are roster ordinals (1, 2, 3...) — not board IDs.
-const STUDENT_IDENTIFIER_DENY_LIST = new Set([
-  'student #', 'student#', 'student no', 'student no.',
-  'roster number', 'roster #', 'roster no', 'roster',
-  'student number in class', 'class number', 'seat number', 'seat #',
-  'number', '#', 'no', 'no.',
+// Headers that must NEVER be auto-selected — or even manually selected — as
+// the student identifier. These are roster ordinals (1, 2, 3...) not board IDs.
+export const STUDENT_IDENTIFIER_DENY_LIST = new Set([
+  'student #', 'student#',
+  'number', '#',
+  'roster number', 'roster #',
+  'class number', 'seat number',
+  'student number in class', 'student no. in class',
+  'line number', 'row number',
+]);
+
+// The ONLY headers allowed to be auto-mapped as `studentIdentifier`.
+// No fuzzy matching, no "contains number", no fallbacks. Strict allow-list.
+export const STUDENT_IDENTIFIER_ALLOW_LIST = new Set([
+  'student number', 'studentnumber', 'student_number',
+  'board student number', 'board number', 'board id',
+  'student id', 'student_id',
+  'external student number', 'externalstudentnumber',
+  'sis student number',
 ]);
 
 const COLUMN_ALIASES: Record<InternalField, string[]> = {
-  studentIdentifier: ['student number', 'studentnumber', 'student_number', 'student id', 'student_id', 'id', 'pupil id', 'stable id', 'stablestudentid', 'stable_student_id', 'board number', 'board id', 'external student number'],
+  // studentIdentifier intentionally uses the strict allow-list above — this
+  // array is left empty so generic alias logic can never widen it.
+  studentIdentifier: [],
   assessmentType: ['type', 'measure', 'assessment', 'subtest', 'domain', 'skill', 'assessment type', 'assessment_type', 'test'],
   score: ['score', 'raw score', 'composite', 'percent', 'result', 'total', 'raw_score'],
   date: ['date', 'assessment date', 'completed on', 'assessment_date', 'test date', 'test_date'],
