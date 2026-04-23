@@ -60,6 +60,7 @@ export function ImportWizard({ open, onOpenChange, onComplete }: ImportWizardPro
             studentsLoading={wizard.studentsLoading}
             classCodeMapped={state.columnMapping.classCode >= 0}
             students={wizard.students}
+            identifierColumnIndex={state.columnMapping.studentIdentifier}
           />
         );
       case WizardStep.ImportResults:
