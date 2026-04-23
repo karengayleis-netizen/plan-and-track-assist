@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -58,6 +59,8 @@ export function StudentsTab() {
   const [backfillAllHeaders, setBackfillAllHeaders] = useState<string[]>([]);
   const [backfillColumnOverride, setBackfillColumnOverride] = useState<string | null>(null);
   const [backfillReparsing, setBackfillReparsing] = useState(false);
+  // Manual resolutions: rowIndex -> chosen studentId. Applied at Confirm time.
+  const [backfillManualResolutions, setBackfillManualResolutions] = useState<Record<number, string>>({});
   
   // Form state for manual add
   const [studentNumber, setStudentNumber] = useState('');
@@ -392,7 +395,7 @@ export function StudentsTab() {
     setBackfillAllHeaders(allHeaders);
     if (rows.length === 0) {
       setBackfillWarnings(warnings);
-      setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
+      setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, matchedByStem: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0, crossHomeroomInitialMatches: {}, rosterInitialsIndex: {}, fileUsesCodedIds: false });
       return;
     }
     const plan = buildMatchPlan(rows, students.map(s => ({
@@ -414,6 +417,7 @@ export function StudentsTab() {
     setBackfillBusy(true);
     setBackfillFile(file);
     setBackfillColumnOverride(null);
+    setBackfillManualResolutions({});
     try {
       await runBackfillParse(file, null);
     } catch (err) {
@@ -439,22 +443,47 @@ export function StudentsTab() {
     }
   };
 
+  // Build a list of file rows that have a manual resolution but are not yet in matched
+  // (so they aren't double-written).
+  const manualResolutionWrites = (() => {
+    if (!backfillPlan) return [] as Array<{ studentId: string; externalNumber: string; rowIndex: number }>;
+    const matchedRowIndexes = new Set(backfillPlan.matched.map(m => m.row.rowIndex));
+    const allRows = [
+      ...backfillPlan.unmatched,
+      ...backfillPlan.ambiguous.map(a => a.row),
+    ];
+    const out: Array<{ studentId: string; externalNumber: string; rowIndex: number }> = [];
+    for (const row of allRows) {
+      const sid = backfillManualResolutions[row.rowIndex];
+      if (!sid) continue;
+      if (matchedRowIndexes.has(row.rowIndex)) continue;
+      out.push({ studentId: sid, externalNumber: row.externalNumber, rowIndex: row.rowIndex });
+    }
+    return out;
+  })();
+
   const handleConfirmBackfill = async () => {
     if (!backfillPlan) return;
     setBackfillCommitting(true);
     setBackfillResults(null);
     setBackfillVerifyMisses([]);
     const results: Array<{ studentId: string; studentNumber: string; externalNumber: string; status: 'updated' | 'failed'; error?: string }> = [];
-    for (const m of backfillPlan.matched) {
-      const studentDoc = students.find(s => s.id === m.studentId);
+
+    const writes: Array<{ studentId: string; externalNumber: string }> = [
+      ...backfillPlan.matched.map(m => ({ studentId: m.studentId, externalNumber: m.row.externalNumber })),
+      ...manualResolutionWrites.map(w => ({ studentId: w.studentId, externalNumber: w.externalNumber })),
+    ];
+
+    for (const w of writes) {
+      const studentDoc = students.find(s => s.id === w.studentId);
       const studentNumber = studentDoc?.studentNumber || '(unknown)';
       try {
-        await updateStudent(m.studentId, { externalStudentNumber: m.row.externalNumber });
-        results.push({ studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, status: 'updated' });
+        await updateStudent(w.studentId, { externalStudentNumber: w.externalNumber });
+        results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'updated' });
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        console.error('[backfill] update failed', { studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, error }, e);
-        results.push({ studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, status: 'failed', error });
+        console.error('[backfill] update failed', { studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, error }, e);
+        results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'failed', error });
       }
     }
     const ok = results.filter(r => r.status === 'updated').length;
@@ -814,7 +843,7 @@ export function StudentsTab() {
       )}
 
       {/* Backfill Preview Dialog */}
-      <Dialog open={!!backfillPlan} onOpenChange={(open) => { if (!open) { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); setBackfillTraceQuery(''); setBackfillResults(null); setBackfillVerifyMisses([]); setBackfillFile(null); setBackfillAllHeaders([]); setBackfillColumnOverride(null); } }}>
+      <Dialog open={!!backfillPlan} onOpenChange={(open) => { if (!open) { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); setBackfillTraceQuery(''); setBackfillResults(null); setBackfillVerifyMisses([]); setBackfillFile(null); setBackfillAllHeaders([]); setBackfillColumnOverride(null); setBackfillManualResolutions({}); } }}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Backfill Preview</DialogTitle>
@@ -988,10 +1017,12 @@ export function StudentsTab() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-success/30 bg-success/5 p-3">
-                  <div className="text-2xl font-semibold text-success">{backfillPlan.matched.length}</div>
+                  <div className="text-2xl font-semibold text-success">{backfillPlan.matched.length + manualResolutionWrites.length}</div>
                   <div className="text-xs text-muted-foreground">Matched — ready to update</div>
                   <div className="text-[10px] text-muted-foreground mt-1">
                     {backfillPlan.matchedByCodedId} by Section + Student # · {backfillPlan.matchedByInitials} by Initials + Homeroom
+                    {backfillPlan.matchedByStem > 0 && <> · {backfillPlan.matchedByStem} by Initials + Homeroom stem</>}
+                    {manualResolutionWrites.length > 0 && <> · {manualResolutionWrites.length} resolved manually</>}
                   </div>
                 </div>
                 <div className="rounded-lg border border-muted bg-muted/30 p-3">
@@ -1008,42 +1039,93 @@ export function StudentsTab() {
                 </div>
               </div>
 
-              {(backfillPlan.missingRosterNumber > 0 || backfillPlan.missingSection > 0 || backfillPlan.derivedIdNotInRoster > 0 || backfillPlan.matchedByInitials > 0) && (
+              {((backfillPlan.fileUsesCodedIds && backfillPlan.missingRosterNumber > 0) || backfillPlan.missingSection > 0 || backfillPlan.derivedIdNotInRoster > 0 || backfillPlan.matchedByInitials > 0 || backfillPlan.matchedByStem > 0) && (
                 <div className="rounded border border-warning/30 bg-warning/5 p-2 text-xs space-y-1">
                   <p className="font-medium text-warning">Diagnostics</p>
-                  {backfillPlan.missingRosterNumber > 0 && <p className="text-muted-foreground">• {backfillPlan.missingRosterNumber} row(s) missing Student # (ordinal)</p>}
+                  {backfillPlan.fileUsesCodedIds && backfillPlan.missingRosterNumber > 0 && <p className="text-muted-foreground">• {backfillPlan.missingRosterNumber} row(s) missing Student # (ordinal)</p>}
                   {backfillPlan.missingSection > 0 && <p className="text-muted-foreground">• {backfillPlan.missingSection} row(s) missing Section Number</p>}
                   {backfillPlan.derivedIdNotInRoster > 0 && <p className="text-muted-foreground">• {backfillPlan.derivedIdNotInRoster} row(s) had a derived ID (e.g. 1AF-3) that doesn't exist in the current roster</p>}
                   {backfillPlan.matchedByInitials > 0 && <p className="text-muted-foreground">• {backfillPlan.matchedByInitials} row(s) only matched by Initials fallback — verify these are the correct students</p>}
+                  {backfillPlan.matchedByStem > 0 && <p className="text-muted-foreground">• {backfillPlan.matchedByStem} row(s) matched via homeroom stem (e.g. file "4AF" ↔ roster "4F") — verify these</p>}
                 </div>
               )}
 
               {backfillPlan.unmatched.length > 0 && (
                 <div className="rounded border border-warning/30 bg-warning/5 p-2">
                   <p className="text-xs font-medium text-warning mb-2">First {Math.min(10, backfillPlan.unmatched.length)} unmatched rows (of {backfillPlan.unmatched.length}):</p>
-                  <div className="overflow-auto max-h-60">
+                  <div className="overflow-auto max-h-72">
                     <table className="w-full text-[11px] font-mono">
                       <thead>
                         <tr className="text-muted-foreground border-b border-border">
                           <th className="text-left p-1">Row</th>
                           <th className="text-left p-1">Section</th>
-                          <th className="text-left p-1">#</th>
                           <th className="text-left p-1">Initials</th>
-                          <th className="text-left p-1">Derived ID</th>
                           <th className="text-left p-1">Board #</th>
+                          <th className="text-left p-1">Roster has these initials in</th>
+                          <th className="text-left p-1">Resolve</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {backfillPlan.unmatched.slice(0, 10).map((r, i) => (
-                          <tr key={i} className="border-b border-border/30">
-                            <td className="p-1">{r.rowIndex}</td>
-                            <td className="p-1">{r.homeroom || '—'}</td>
-                            <td className="p-1">{r.rosterNumber || '—'}</td>
-                            <td className="p-1">{r.initials}</td>
-                            <td className="p-1">{r.derivedCodedId || '—'}</td>
-                            <td className="p-1">{r.externalNumber}</td>
-                          </tr>
-                        ))}
+                        {backfillPlan.unmatched.slice(0, 10).map((r, i) => {
+                          const candidateIds = backfillPlan.crossHomeroomInitialMatches[r.rowIndex] || [];
+                          const candidates = candidateIds.map(id => students.find(s => s.id === id)).filter(Boolean) as typeof students;
+                          const resolvedId = backfillManualResolutions[r.rowIndex];
+                          const resolvedStudent = resolvedId ? students.find(s => s.id === resolvedId) : null;
+                          return (
+                            <tr key={i} className="border-b border-border/30 align-top">
+                              <td className="p-1">{r.rowIndex}</td>
+                              <td className="p-1">{r.homeroom || '—'}</td>
+                              <td className="p-1">{r.initials}</td>
+                              <td className="p-1">{r.externalNumber}</td>
+                              <td className="p-1">
+                                {candidates.length === 0 ? (
+                                  <span className="text-muted-foreground">—</span>
+                                ) : (
+                                  candidates.map(c => c.homeroom).join(', ')
+                                )}
+                              </td>
+                              <td className="p-1">
+                                {resolvedStudent ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-success">→ {resolvedStudent.studentNumber}</span>
+                                    <button
+                                      className="text-[10px] underline text-muted-foreground"
+                                      onClick={() => setBackfillManualResolutions(prev => { const n = { ...prev }; delete n[r.rowIndex]; return n; })}
+                                    >
+                                      undo
+                                    </button>
+                                  </div>
+                                ) : candidates.length > 0 ? (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2">Resolve</Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-80 p-2">
+                                      <p className="text-xs font-medium mb-2">Map row {r.rowIndex} ({r.initials}, board {r.externalNumber}) to:</p>
+                                      <div className="space-y-1 max-h-60 overflow-y-auto">
+                                        {candidates.map(c => (
+                                          <button
+                                            key={c.id}
+                                            className="w-full text-left text-xs border rounded p-2 hover:bg-accent"
+                                            onClick={() => setBackfillManualResolutions(prev => ({ ...prev, [r.rowIndex]: c.id }))}
+                                          >
+                                            <div className="font-mono font-medium">{c.studentNumber}</div>
+                                            <div className="text-muted-foreground">
+                                              {c.initials} · homeroom {c.homeroom} · grade {c.grade ?? '—'}
+                                              {c.externalStudentNumber && <> · current board #{c.externalStudentNumber}</>}
+                                            </div>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">no candidates</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1054,13 +1136,55 @@ export function StudentsTab() {
               )}
 
               {backfillPlan.ambiguous.length > 0 && (
-                <div className="max-h-32 overflow-auto rounded border border-warning/30 p-2 bg-warning/5">
-                  <p className="text-xs font-medium text-warning mb-1">Ambiguous rows (resolve manually in Edit Student):</p>
-                  {backfillPlan.ambiguous.map((a, i) => (
-                    <div key={i} className="text-xs text-muted-foreground font-mono">
-                      Row {a.row.rowIndex}: {a.row.initials} in {a.row.homeroom} matches {a.candidateIds.length} students
-                    </div>
-                  ))}
+                <div className="max-h-72 overflow-auto rounded border border-warning/30 p-2 bg-warning/5 space-y-1">
+                  <p className="text-xs font-medium text-warning mb-1">Ambiguous rows — pick the right student:</p>
+                  {backfillPlan.ambiguous.map((a, i) => {
+                    const candidates = a.candidateIds.map(id => students.find(s => s.id === id)).filter(Boolean) as typeof students;
+                    const resolvedId = backfillManualResolutions[a.row.rowIndex];
+                    const resolvedStudent = resolvedId ? students.find(s => s.id === resolvedId) : null;
+                    return (
+                      <div key={i} className="text-xs font-mono flex items-center justify-between gap-2 border-b border-border/30 py-1">
+                        <span className="text-muted-foreground">
+                          Row {a.row.rowIndex}: {a.row.initials} in {a.row.homeroom} (board {a.row.externalNumber}) — {candidates.length} matches
+                        </span>
+                        {resolvedStudent ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-success">→ {resolvedStudent.studentNumber}</span>
+                            <button
+                              className="text-[10px] underline text-muted-foreground"
+                              onClick={() => setBackfillManualResolutions(prev => { const n = { ...prev }; delete n[a.row.rowIndex]; return n; })}
+                            >
+                              undo
+                            </button>
+                          </div>
+                        ) : (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button size="sm" variant="outline" className="h-6 text-[10px] px-2">Resolve</Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 p-2">
+                              <p className="text-xs font-medium mb-2">Map row {a.row.rowIndex} (board {a.row.externalNumber}) to:</p>
+                              <div className="space-y-1 max-h-60 overflow-y-auto">
+                                {candidates.map(c => (
+                                  <button
+                                    key={c.id}
+                                    className="w-full text-left text-xs border rounded p-2 hover:bg-accent"
+                                    onClick={() => setBackfillManualResolutions(prev => ({ ...prev, [a.row.rowIndex]: c.id }))}
+                                  >
+                                    <div className="font-mono font-medium">{c.studentNumber}</div>
+                                    <div className="text-muted-foreground">
+                                      {c.initials} · homeroom {c.homeroom} · grade {c.grade ?? '—'}
+                                      {c.externalStudentNumber && <> · current board #{c.externalStudentNumber}</>}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1071,10 +1195,10 @@ export function StudentsTab() {
             </Button>
             <Button
               onClick={handleConfirmBackfill}
-              disabled={backfillCommitting || !backfillPlan || backfillPlan.matched.length === 0}
+              disabled={backfillCommitting || !backfillPlan || (backfillPlan.matched.length + manualResolutionWrites.length) === 0}
             >
               {backfillCommitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Confirm Backfill ({backfillPlan?.matched.length ?? 0})
+              Confirm Backfill ({(backfillPlan?.matched.length ?? 0) + manualResolutionWrites.length})
             </Button>
           </DialogFooter>
         </DialogContent>

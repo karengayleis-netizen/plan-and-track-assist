@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 
-export type MatchSource = 'codedId' | 'initialsHomeroom';
+export type MatchSource = 'codedId' | 'initialsHomeroom' | 'initialsHomeroomStem' | 'manualResolution';
 
 export interface BackfillRow {
   initials: string;
@@ -57,6 +57,18 @@ export const normalizeInitials = (s: string): string =>
 
 export const normalizeHomeroom = (s: string): string =>
   (s || '').toUpperCase().trim();
+
+// Strip trailing letters from a homeroom code to get the numeric stem.
+// e.g. "4AF" -> "4", "1BF" -> "1", "23F" -> "23", "K1" -> "K1"
+export const homeroomStem = (s: string): string => {
+  const norm = normalizeHomeroom(s);
+  const numMatch = norm.match(/^(\d+)/);
+  if (numMatch) return numMatch[1];
+  // No leading digits — return the leading letter run (e.g. "K1" -> "K", "JK" -> "JK")
+  const letterMatch = norm.match(/^([A-Z]+)/);
+  if (letterMatch) return letterMatch[1];
+  return norm;
+};
 
 const cleanCell = (v: unknown): string => {
   if (v == null) return '';
@@ -219,9 +231,18 @@ export interface MatchPlan {
   // diagnostics
   matchedByCodedId: number;
   matchedByInitials: number;
+  matchedByStem: number;
   missingRosterNumber: number;
   missingSection: number;
   derivedIdNotInRoster: number;
+  // For each unmatched row index, the roster student IDs that share the same initials
+  // (regardless of homeroom). Used by the UI to power the "Resolve" picker and trace.
+  crossHomeroomInitialMatches: Record<number, string[]>;
+  // For trace: roster initials index — initials -> list of {id, homeroom}
+  rosterInitialsIndex: Record<string, Array<{ id: string; homeroom: string }>>;
+  // Whether the input file used coded-ID style (Section + Student #) at all.
+  // When false, missingRosterNumber is irrelevant noise.
+  fileUsesCodedIds: boolean;
 }
 
 interface RosterStudent {
@@ -242,9 +263,13 @@ export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): 
 
   let matchedByCodedId = 0;
   let matchedByInitials = 0;
+  let matchedByStem = 0;
   let missingRosterNumber = 0;
   let missingSection = 0;
   let derivedIdNotInRoster = 0;
+
+  // Detect whether the file uses coded-ID style at all (any row with rosterNumber)
+  const fileUsesCodedIds = rows.some(r => !!r.rosterNumber);
 
   // Index roster by stableStudentId / studentNumber for fast lookup
   const byCodedId = new Map<string, RosterStudent>();
@@ -253,9 +278,20 @@ export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): 
     if (s.studentNumber) byCodedId.set(s.studentNumber.trim().toUpperCase(), s);
   }
 
+  // Pre-build initials index for fast cross-homeroom lookup
+  const rosterInitialsIndex: Record<string, Array<{ id: string; homeroom: string }>> = {};
+  for (const s of students) {
+    const k = normalizeInitials(s.initials);
+    if (!k) continue;
+    (rosterInitialsIndex[k] ||= []).push({ id: s.id, homeroom: s.homeroom });
+  }
+
+  const crossHomeroomInitialMatches: Record<number, string[]> = {};
+
   for (const row of rows) {
     if (!row.homeroom) missingSection++;
-    if (!row.rosterNumber) missingRosterNumber++;
+    // Only count missing roster ordinal when the file actually uses coded-ID style
+    if (fileUsesCodedIds && !row.rosterNumber) missingRosterNumber++;
 
     let chosen: RosterStudent | undefined;
     let source: MatchSource | undefined;
@@ -272,7 +308,7 @@ export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): 
       }
     }
 
-    // 2) Fallback: initials + homeroom
+    // 2) Fallback: initials + homeroom (strict)
     if (!chosen) {
       const targetInit = normalizeInitials(row.initials);
       const targetHome = normalizeHomeroom(row.homeroom);
@@ -283,15 +319,41 @@ export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): 
         const byGrade = candidates.filter(s => String(s.grade ?? '').trim() === String(row.grade).trim());
         if (byGrade.length === 1) candidates = byGrade;
       }
-      if (candidates.length === 0) {
-        unmatched.push(row);
-        continue;
+
+      if (candidates.length === 1) {
+        chosen = candidates[0];
+        source = 'initialsHomeroom';
       } else if (candidates.length > 1) {
         ambiguous.push({ row, candidateIds: candidates.map(c => c.id) });
         continue;
+      } else {
+        // 3) Fallback: initials + homeroom STEM (e.g. file "4AF" ↔ roster "4F")
+        const targetStem = homeroomStem(row.homeroom);
+        let stemCandidates = students.filter(
+          s => normalizeInitials(s.initials) === targetInit && homeroomStem(s.homeroom) === targetStem
+        );
+        if (stemCandidates.length > 1 && row.grade) {
+          const byGrade = stemCandidates.filter(s => String(s.grade ?? '').trim() === String(row.grade).trim());
+          if (byGrade.length === 1) stemCandidates = byGrade;
+        }
+
+        if (stemCandidates.length === 1) {
+          chosen = stemCandidates[0];
+          source = 'initialsHomeroomStem';
+        } else if (stemCandidates.length > 1) {
+          ambiguous.push({ row, candidateIds: stemCandidates.map(c => c.id) });
+          // Also record cross-homeroom initials hits for diagnostics
+          const hits = rosterInitialsIndex[targetInit] || [];
+          if (hits.length) crossHomeroomInitialMatches[row.rowIndex] = hits.map(h => h.id);
+          continue;
+        } else {
+          // No stem match either — record any cross-homeroom initials hits for the resolver
+          const hits = rosterInitialsIndex[targetInit] || [];
+          if (hits.length) crossHomeroomInitialMatches[row.rowIndex] = hits.map(h => h.id);
+          unmatched.push(row);
+          continue;
+        }
       }
-      chosen = candidates[0];
-      source = 'initialsHomeroom';
     }
 
     if (!chosen || !source) {
@@ -311,6 +373,7 @@ export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): 
         currentExternal: chosen.externalStudentNumber,
       });
       if (source === 'codedId') matchedByCodedId++;
+      else if (source === 'initialsHomeroomStem') matchedByStem++;
       else matchedByInitials++;
     }
   }
@@ -322,8 +385,12 @@ export function buildMatchPlan(rows: BackfillRow[], students: RosterStudent[]): 
     ambiguous,
     matchedByCodedId,
     matchedByInitials,
+    matchedByStem,
     missingRosterNumber,
     missingSection,
     derivedIdNotInRoster,
+    crossHomeroomInitialMatches,
+    rosterInitialsIndex,
+    fileUsesCodedIds,
   };
 }
