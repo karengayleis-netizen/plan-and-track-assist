@@ -73,7 +73,9 @@ export function useImportWizard(onComplete?: () => void) {
 
       const idValidity = validateStudentIdentifierMapping(mapping.studentIdentifier, headers);
       let reasonStr = 'ok';
-      if (!idValidity.valid) reasonStr = idValidity.reason;
+      if (idValidity.valid === false) {
+        reasonStr = idValidity.reason;
+      }
       const sampleVals = idValidity.valid
         ? rows.slice(0, 5).map(r => r[idValidity.columnIndex]?.trim() || '')
         : [];
