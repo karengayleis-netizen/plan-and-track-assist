@@ -70,6 +70,19 @@ export function useImportWizard(onComplete?: () => void) {
       const { headers, rows } = parseCSV(text);
       const source = state.source || 'generic_csv';
       const mapping = detectColumnMapping(headers, source);
+
+      const idValidity = validateStudentIdentifierMapping(mapping.studentIdentifier, headers);
+      console.log('[ImportWizard] Auto-detect studentIdentifier:', {
+        source: 'auto-detect',
+        columnIndex: mapping.studentIdentifier,
+        headerName: idValidity.headerName,
+        valid: idValidity.valid,
+        reason: idValidity.valid ? 'ok' : idValidity.reason,
+        first5Values: idValidity.valid
+          ? rows.slice(0, 5).map(r => r[mapping.studentIdentifier]?.trim() || '')
+          : [],
+      });
+
       setState(s => ({
         ...s,
         fileName: file.name,
