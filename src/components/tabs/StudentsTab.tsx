@@ -839,6 +839,91 @@ export function StudentsTab() {
                 </div>
               )}
 
+              {/* Trace by Student # */}
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs font-semibold whitespace-nowrap">Trace student by Student #</Label>
+                  <Input
+                    placeholder="e.g. 4F-14"
+                    value={backfillTraceQuery}
+                    onChange={(e) => setBackfillTraceQuery(e.target.value)}
+                    className="h-8 text-xs max-w-xs"
+                  />
+                </div>
+                {backfillTrace && (
+                  <div className="text-[11px] font-mono space-y-1">
+                    {backfillTrace.student ? (
+                      <p className="text-muted-foreground">
+                        Roster: <span className="text-foreground">id={backfillTrace.student.id}</span>, initials="{backfillTrace.student.initials}", homeroom="{backfillTrace.student.homeroom}", externalStudentNumber="{backfillTrace.student.externalStudentNumber || '∅'}"
+                      </p>
+                    ) : (
+                      <p className="text-destructive">Student "{backfillTrace.query}" not found in current in-memory roster.</p>
+                    )}
+                    <p className="text-muted-foreground">
+                      Bucket:{' '}
+                      <span className={
+                        backfillTrace.bucket === 'matched' ? 'text-success' :
+                        backfillTrace.bucket === 'alreadyCorrect' ? 'text-foreground' :
+                        backfillTrace.bucket === 'no-row' ? 'text-destructive' :
+                        'text-warning'
+                      }>
+                        {backfillTrace.bucket === 'no-row' ? 'NO FILE ROW produced this derived ID' : backfillTrace.bucket}
+                      </span>
+                    </p>
+                    {backfillTrace.matchedHit && (
+                      <p className="text-success">→ will write externalStudentNumber="{backfillTrace.matchedHit.row.externalNumber}" via {backfillTrace.matchedHit.matchSource}</p>
+                    )}
+                    {backfillTrace.unmatchedHit && (
+                      <p className="text-warning">→ file row {backfillTrace.unmatchedHit.rowIndex}: section="{backfillTrace.unmatchedHit.homeroom}" #="{backfillTrace.unmatchedHit.rosterNumber}" initials="{backfillTrace.unmatchedHit.initials}" board="{backfillTrace.unmatchedHit.externalNumber}" — derived ID not in roster</p>
+                    )}
+                    {backfillTrace.ambiguousHit && (
+                      <p className="text-warning">→ ambiguous: {backfillTrace.ambiguousHit.candidateIds.length} roster candidates</p>
+                    )}
+                    {backfillTrace.closest.length > 0 && (
+                      <div>
+                        <p className="text-muted-foreground">Closest unmatched file rows by initials/homeroom:</p>
+                        {backfillTrace.closest.map((r, i) => (
+                          <p key={i} className="text-muted-foreground pl-3">• row {r.rowIndex}: section="{r.homeroom}" #="{r.rosterNumber || '—'}" initials="{r.initials}" derived="{r.derivedCodedId || '—'}" board="{r.externalNumber}"</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Post-commit results */}
+              {backfillResults && (
+                <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold">
+                      Write results: <span className="text-success">{backfillResults.filter(r => r.status === 'updated').length} updated</span>
+                      {backfillResults.some(r => r.status === 'failed') && (
+                        <span className="text-destructive"> · {backfillResults.filter(r => r.status === 'failed').length} failed</span>
+                      )}
+                      {' '}of {backfillResults.length}
+                    </p>
+                    <Button size="sm" variant="outline" onClick={downloadBackfillResultsCsv}>Download CSV</Button>
+                  </div>
+                  {backfillVerifyMisses.length > 0 && (
+                    <div className="rounded border border-destructive/40 bg-destructive/10 p-2 text-[11px] font-mono">
+                      <p className="text-destructive font-semibold mb-1">⚠ {backfillVerifyMisses.length} write(s) reported success but did NOT persist in the roster after refetch — likely Firestore rules rejection.</p>
+                      <div className="max-h-32 overflow-auto">
+                        {backfillVerifyMisses.slice(0, 10).map((m, i) => (
+                          <p key={i}>• {m.studentNumber} (id={m.studentId}) expected="{m.expected}"</p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {backfillResults.some(r => r.status === 'failed') && (
+                    <div className="max-h-40 overflow-auto rounded border border-destructive/40 bg-destructive/5 p-2 text-[11px] font-mono">
+                      {backfillResults.filter(r => r.status === 'failed').slice(0, 20).map((r, i) => (
+                        <p key={i} className="text-destructive">• {r.studentNumber} → {r.error || 'unknown error'}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-success/30 bg-success/5 p-3">
                   <div className="text-2xl font-semibold text-success">{backfillPlan.matched.length}</div>
