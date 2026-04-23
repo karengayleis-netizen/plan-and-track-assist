@@ -44,7 +44,7 @@ const presets: Record<ImportSource, SourcePreset> = {
     description: 'Import Knowledgehook math mission / assessment data. Default family: Math.',
     assessmentFamily: 'math',
     suggestedHeaders: {
-      studentIdentifier: ['Student Number', 'Student ID', 'Number'],
+      studentIdentifier: ['Student Number', 'Student ID', 'Board Number', 'External Student Number'],
       assessmentType: ['Assessment', 'Assignment'],
       score: ['Score', 'Percent'],
       date: ['Date', 'Completed On'],
