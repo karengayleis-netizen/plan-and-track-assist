@@ -113,6 +113,25 @@ export function useImportWizard(onComplete?: () => void) {
       console.warn('[ImportWizard] confirmMapping called before students loaded — skipping');
       return;
     }
+
+    // Hard block: identifier must be valid (in allow-list, not in deny-list).
+    const idValidity = validateStudentIdentifierMapping(state.columnMapping.studentIdentifier, state.headers);
+    const validReason = idValidity.valid ? 'ok' : idValidity.reason;
+    const sample = idValidity.valid
+      ? state.rawRows.slice(0, 5).map(r => r[idValidity.columnIndex]?.trim() || '')
+      : [];
+    console.log('[ImportWizard] confirmMapping studentIdentifier check:', {
+      columnIndex: state.columnMapping.studentIdentifier,
+      headerName: idValidity.headerName,
+      valid: idValidity.valid,
+      reason: validReason,
+      first5Values: sample,
+    });
+    if (!idValidity.valid) {
+      console.warn('[ImportWizard] confirmMapping blocked — invalid studentIdentifier mapping');
+      return;
+    }
+
     // Build rows + match students by studentNumber
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
