@@ -417,6 +417,7 @@ export function StudentsTab() {
     setBackfillBusy(true);
     setBackfillFile(file);
     setBackfillColumnOverride(null);
+    setBackfillManualResolutions({});
     try {
       await runBackfillParse(file, null);
     } catch (err) {
