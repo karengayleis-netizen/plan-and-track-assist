@@ -14,6 +14,7 @@ interface PreviewStepProps {
   studentsLoading?: boolean;
   classCodeMapped?: boolean;
   students?: Array<{ externalStudentNumber?: string; stableStudentId?: string; studentNumber?: string }>;
+  identifierColumnIndex?: number;
 }
 
 const statusColors: Record<string, string> = {
@@ -22,7 +23,7 @@ const statusColors: Record<string, string> = {
   error: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
-export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading, classCodeMapped, students }: PreviewStepProps) {
+export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading, classCodeMapped, students, identifierColumnIndex }: PreviewStepProps) {
   const [homeroomFilter, setHomeroomFilter] = useState<string>('all');
 
   // Collect unique homerooms from rows
