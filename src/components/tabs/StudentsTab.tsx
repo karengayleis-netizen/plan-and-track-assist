@@ -392,7 +392,7 @@ export function StudentsTab() {
     setBackfillAllHeaders(allHeaders);
     if (rows.length === 0) {
       setBackfillWarnings(warnings);
-      setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0 });
+      setBackfillPlan({ matched: [], alreadyCorrect: [], unmatched: [], ambiguous: [], matchedByCodedId: 0, matchedByInitials: 0, matchedByStem: 0, missingRosterNumber: 0, missingSection: 0, derivedIdNotInRoster: 0, crossHomeroomInitialMatches: {}, rosterInitialsIndex: {}, fileUsesCodedIds: false });
       return;
     }
     const plan = buildMatchPlan(rows, students.map(s => ({
