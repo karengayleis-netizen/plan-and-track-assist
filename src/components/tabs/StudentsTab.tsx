@@ -814,7 +814,7 @@ export function StudentsTab() {
       )}
 
       {/* Backfill Preview Dialog */}
-      <Dialog open={!!backfillPlan} onOpenChange={(open) => { if (!open) { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); setBackfillTraceQuery(''); setBackfillResults(null); setBackfillVerifyMisses([]); } }}>
+      <Dialog open={!!backfillPlan} onOpenChange={(open) => { if (!open) { setBackfillPlan(null); setBackfillDetected(null); setBackfillSampleRows([]); setBackfillTraceQuery(''); setBackfillResults(null); setBackfillVerifyMisses([]); setBackfillFile(null); setBackfillAllHeaders([]); setBackfillColumnOverride(null); } }}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Backfill Preview</DialogTitle>
