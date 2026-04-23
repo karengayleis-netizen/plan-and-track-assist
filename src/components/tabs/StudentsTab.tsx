@@ -443,22 +443,47 @@ export function StudentsTab() {
     }
   };
 
+  // Build a list of file rows that have a manual resolution but are not yet in matched
+  // (so they aren't double-written).
+  const manualResolutionWrites = (() => {
+    if (!backfillPlan) return [] as Array<{ studentId: string; externalNumber: string; rowIndex: number }>;
+    const matchedRowIndexes = new Set(backfillPlan.matched.map(m => m.row.rowIndex));
+    const allRows = [
+      ...backfillPlan.unmatched,
+      ...backfillPlan.ambiguous.map(a => a.row),
+    ];
+    const out: Array<{ studentId: string; externalNumber: string; rowIndex: number }> = [];
+    for (const row of allRows) {
+      const sid = backfillManualResolutions[row.rowIndex];
+      if (!sid) continue;
+      if (matchedRowIndexes.has(row.rowIndex)) continue;
+      out.push({ studentId: sid, externalNumber: row.externalNumber, rowIndex: row.rowIndex });
+    }
+    return out;
+  })();
+
   const handleConfirmBackfill = async () => {
     if (!backfillPlan) return;
     setBackfillCommitting(true);
     setBackfillResults(null);
     setBackfillVerifyMisses([]);
     const results: Array<{ studentId: string; studentNumber: string; externalNumber: string; status: 'updated' | 'failed'; error?: string }> = [];
-    for (const m of backfillPlan.matched) {
-      const studentDoc = students.find(s => s.id === m.studentId);
+
+    const writes: Array<{ studentId: string; externalNumber: string }> = [
+      ...backfillPlan.matched.map(m => ({ studentId: m.studentId, externalNumber: m.row.externalNumber })),
+      ...manualResolutionWrites.map(w => ({ studentId: w.studentId, externalNumber: w.externalNumber })),
+    ];
+
+    for (const w of writes) {
+      const studentDoc = students.find(s => s.id === w.studentId);
       const studentNumber = studentDoc?.studentNumber || '(unknown)';
       try {
-        await updateStudent(m.studentId, { externalStudentNumber: m.row.externalNumber });
-        results.push({ studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, status: 'updated' });
+        await updateStudent(w.studentId, { externalStudentNumber: w.externalNumber });
+        results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'updated' });
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        console.error('[backfill] update failed', { studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, error }, e);
-        results.push({ studentId: m.studentId, studentNumber, externalNumber: m.row.externalNumber, status: 'failed', error });
+        console.error('[backfill] update failed', { studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, error }, e);
+        results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'failed', error });
       }
     }
     const ok = results.filter(r => r.status === 'updated').length;
