@@ -851,6 +851,41 @@ export function StudentsTab() {
                 </div>
               )}
 
+              {/* Manual board-number column picker */}
+              {backfillDetected && !backfillDetected.externalNumber && backfillAllHeaders.length > 0 && (
+                <div className="rounded-lg border border-warning/40 bg-warning/5 p-3 space-y-2">
+                  <p className="text-xs font-semibold">
+                    Select the column that contains the board student number:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {backfillAllHeaders.filter(h => h && h.trim()).map(header => (
+                      <button
+                        key={header}
+                        type="button"
+                        disabled={backfillReparsing}
+                        onClick={() => handlePickBoardColumn(header)}
+                        className="focus:outline-none"
+                      >
+                        <Badge
+                          variant={backfillColumnOverride === header ? 'default' : 'outline'}
+                          className="cursor-pointer text-xs font-mono"
+                        >
+                          {header}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                  {backfillColumnOverride && backfillPlan && backfillPlan.matched.length === 0 && (
+                    <p className="text-[11px] text-warning">
+                      Selected column has no values that look like board IDs — try another.
+                    </p>
+                  )}
+                  {backfillReparsing && (
+                    <p className="text-[11px] text-muted-foreground">Re-parsing with selected column…</p>
+                  )}
+                </div>
+              )}
+
               {/* Sample parsed rows */}
               {backfillSampleRows.length > 0 && (
                 <div className="rounded-lg border border-border bg-muted/30 p-3">
