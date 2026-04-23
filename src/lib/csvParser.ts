@@ -61,8 +61,17 @@ function parseLine(line: string): string[] {
 
 // ── Column Alias Detection ───────────────────────────────────────────────────
 
+// Headers that must NEVER be auto-selected as the student identifier.
+// These are roster ordinals (1, 2, 3...) — not board IDs.
+const STUDENT_IDENTIFIER_DENY_LIST = new Set([
+  'student #', 'student#', 'student no', 'student no.',
+  'roster number', 'roster #', 'roster no', 'roster',
+  'student number in class', 'class number', 'seat number', 'seat #',
+  '#', 'no', 'no.',
+]);
+
 const COLUMN_ALIASES: Record<InternalField, string[]> = {
-  studentIdentifier: ['student number', 'studentnumber', 'student_number', 'number', 'student id', 'student_id', 'id', 'pupil id', 'stable id', 'stablestudentid', 'stable_student_id'],
+  studentIdentifier: ['student number', 'studentnumber', 'student_number', 'student id', 'student_id', 'id', 'pupil id', 'stable id', 'stablestudentid', 'stable_student_id', 'board number', 'board id', 'external student number'],
   assessmentType: ['type', 'measure', 'assessment', 'subtest', 'domain', 'skill', 'assessment type', 'assessment_type', 'test'],
   score: ['score', 'raw score', 'composite', 'percent', 'result', 'total', 'raw_score'],
   date: ['date', 'assessment date', 'completed on', 'assessment_date', 'test date', 'test_date'],
