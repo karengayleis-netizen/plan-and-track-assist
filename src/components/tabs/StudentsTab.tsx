@@ -483,6 +483,52 @@ export function StudentsTab() {
   const studentsWithBoardId = students.filter(s => s.externalStudentNumber && String(s.externalStudentNumber).trim().length > 0).length;
   const coveragePct = totalStudents > 0 ? Math.round((studentsWithBoardId / totalStudents) * 100) : 0;
 
+  // Re-verify backfill writes whenever roster reloads after a commit
+  useEffect(() => {
+    if (!backfillResults) return;
+    const misses = verifyBackfillResults(backfillResults);
+    setBackfillVerifyMisses(misses);
+    if (misses.length > 0) {
+      console.warn('[backfill] post-commit verification: writes not visible in roster', misses);
+    } else {
+      console.log('[backfill] post-commit verification: all writes confirmed in roster');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students, backfillResults]);
+
+  // Trace lookup: find a student by studentNumber and report which bucket their row landed in
+  const backfillTrace = (() => {
+    const q = backfillTraceQuery.trim().toUpperCase();
+    if (!q || !backfillPlan) return null;
+    const student = students.find(s => (s.studentNumber || '').trim().toUpperCase() === q);
+    const matchedHit = backfillPlan.matched.find(m =>
+      m.row.derivedCodedId?.toUpperCase() === q ||
+      (students.find(s => s.id === m.studentId)?.studentNumber || '').toUpperCase() === q
+    );
+    const correctHit = backfillPlan.alreadyCorrect.find(r => r.derivedCodedId?.toUpperCase() === q);
+    const unmatchedHit = backfillPlan.unmatched.find(r => r.derivedCodedId?.toUpperCase() === q);
+    const ambiguousHit = backfillPlan.ambiguous.find(a => a.row.derivedCodedId?.toUpperCase() === q);
+
+    let bucket: 'matched' | 'alreadyCorrect' | 'unmatched' | 'ambiguous' | 'no-row' = 'no-row';
+    if (matchedHit) bucket = 'matched';
+    else if (correctHit) bucket = 'alreadyCorrect';
+    else if (unmatchedHit) bucket = 'unmatched';
+    else if (ambiguousHit) bucket = 'ambiguous';
+
+    let closest: BackfillRow[] = [];
+    if (student && bucket === 'no-row') {
+      const initU = (student.initials || '').toUpperCase().replace(/\./g, '').trim();
+      const homeU = (student.homeroom || '').toUpperCase().trim();
+      closest = backfillPlan.unmatched
+        .filter(r =>
+          r.initials.toUpperCase().replace(/\./g, '').trim() === initU ||
+          r.homeroom.toUpperCase().trim() === homeU
+        )
+        .slice(0, 5);
+    }
+    return { query: q, student, bucket, matchedHit, correctHit, unmatchedHit, ambiguousHit, closest };
+  })();
+
   return (
     <div className="space-y-6">
       {/* Roster Coverage Indicator */}
