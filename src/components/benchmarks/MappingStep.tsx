@@ -3,7 +3,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import type { ColumnMapping, InternalField } from '@/types/importWizard';
 import { REQUIRED_FIELDS, OPTIONAL_FIELDS } from '@/types/importWizard';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { validateStudentIdentifierMapping, STUDENT_IDENTIFIER_DENY_LIST, STUDENT_IDENTIFIER_ALLOW_LIST } from '@/lib/csvParser';
 
 interface MappingStepProps {
   headers: string[];
