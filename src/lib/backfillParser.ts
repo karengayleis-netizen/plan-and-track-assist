@@ -38,11 +38,19 @@ export interface BackfillParseResult {
 
 const HEADER_ALIASES = {
   initials: ['student initials', 'initials'],
-  externalNumber: ['student number', 'board number', 'external student number', 'sis id', 'board student number'],
+  externalNumber: [
+    'student number', 'board number', 'external student number', 'sis id', 'board student number',
+    'oen', 'ontario education number', 'student id', 'student id number',
+    'board id', 'board #', 'board no', 'board no.',
+  ],
   homeroom: ['section number', 'section', 'homeroom', 'class', 'class name'],
   rosterNumber: ['student #', 'student number in class', 'roster number', 'number', 'student no', 'student no.', '#'],
   grade: ['grade', 'year group'],
 };
+
+export interface BackfillOverrides {
+  externalNumber?: string;
+}
 
 export const normalizeInitials = (s: string): string =>
   (s || '').replace(/\./g, '').toUpperCase().trim();
