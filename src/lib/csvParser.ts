@@ -105,22 +105,30 @@ export function detectColumnMapping(headers: string[], source: ImportSource): Co
   const mapping: ColumnMapping = {} as ColumnMapping;
   const headerLower = headers.map(h => h.toLowerCase().trim());
 
-  // Initialize all fields to -1
   const allFields: InternalField[] = Object.keys(COLUMN_ALIASES) as InternalField[];
   for (const field of allFields) {
     mapping[field] = -1;
   }
 
-  // Try preset suggested headers first, then aliases
   for (const field of allFields) {
+    if (field === 'studentIdentifier') {
+      // Strict allow-list ONLY. No preset shortcut, no fuzzy match, no fallback.
+      // If no approved header exists, leave studentIdentifier = -1.
+      for (let i = 0; i < headerLower.length; i++) {
+        const h = headerLower[i];
+        if (STUDENT_IDENTIFIER_DENY_LIST.has(h)) continue;
+        if (STUDENT_IDENTIFIER_ALLOW_LIST.has(h)) {
+          mapping[field] = i;
+          break;
+        }
+      }
+      continue;
+    }
+
     const suggested = preset.suggestedHeaders[field] || [];
     const aliases = [...suggested.map(s => s.toLowerCase()), ...COLUMN_ALIASES[field]];
 
     for (let i = 0; i < headerLower.length; i++) {
-      // For studentIdentifier, never auto-select a known roster-ordinal header.
-      if (field === 'studentIdentifier' && STUDENT_IDENTIFIER_DENY_LIST.has(headerLower[i])) {
-        continue;
-      }
       if (aliases.includes(headerLower[i])) {
         mapping[field] = i;
         break;
@@ -129,6 +137,35 @@ export function detectColumnMapping(headers: string[], source: ImportSource): Co
   }
 
   return mapping;
+}
+
+// ── Student Identifier Validation ────────────────────────────────────────────
+
+export type IdentifierValidity =
+  | { valid: true; columnIndex: number; headerName: string }
+  | { valid: false; reason: 'unmapped' | 'denied' | 'not-allowed'; columnIndex: number; headerName: string };
+
+/**
+ * Centralized validation for the studentIdentifier mapping.
+ * Used by detection, manual selection, template application, preview, and import
+ * so they all enforce the exact same rule.
+ */
+export function validateStudentIdentifierMapping(
+  columnIndex: number,
+  headers: string[],
+): IdentifierValidity {
+  if (columnIndex < 0 || columnIndex >= headers.length) {
+    return { valid: false, reason: 'unmapped', columnIndex: -1, headerName: '' };
+  }
+  const headerName = headers[columnIndex] || '';
+  const h = headerName.toLowerCase().trim();
+  if (STUDENT_IDENTIFIER_DENY_LIST.has(h)) {
+    return { valid: false, reason: 'denied', columnIndex, headerName };
+  }
+  if (!STUDENT_IDENTIFIER_ALLOW_LIST.has(h)) {
+    return { valid: false, reason: 'not-allowed', columnIndex, headerName };
+  }
+  return { valid: true, columnIndex, headerName };
 }
 
 // ── Row Validation ───────────────────────────────────────────────────────────
