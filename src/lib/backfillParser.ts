@@ -150,7 +150,7 @@ const parseSheet = (
   return { rows: out, detected, headers };
 };
 
-export async function parseBackfillFile(file: File): Promise<BackfillParseResult> {
+export async function parseBackfillFile(file: File, overrides?: BackfillOverrides): Promise<BackfillParseResult> {
   const warnings: string[] = [];
   const rows: BackfillRow[] = [];
   let detectedColumns: DetectedColumns = { initials: null, externalNumber: null, homeroom: null, rosterNumber: null, grade: null };
@@ -174,7 +174,7 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
     for (const sheetName of wb.SheetNames) {
       const sheet = wb.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-      const result = parseSheet(json, sheetName, warnings);
+      const result = parseSheet(json, sheetName, warnings, overrides);
       rows.push(...result.rows);
       mergeDetected(result.detected);
       if (result.headers.length && !allHeaders.length) allHeaders = result.headers;
@@ -195,7 +195,7 @@ export async function parseBackfillFile(file: File): Promise<BackfillParseResult
       out.push(cur.trim());
       return out;
     });
-    const result = parseSheet(matrix, 'CSV', warnings);
+    const result = parseSheet(matrix, 'CSV', warnings, overrides);
     rows.push(...result.rows);
     mergeDetected(result.detected);
     allHeaders = result.headers;
