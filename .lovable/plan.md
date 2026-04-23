@@ -1,41 +1,54 @@
 
 
-## Backfill diagnostics & verification — already implemented
+## Add manual board-number column override to Backfill
 
-Per the prior approved plan (last turn), all five requested fixes are already in `src/lib/backfillParser.ts` and `src/components/tabs/StudentsTab.tsx`:
+### The actual problem
 
-1. **`alreadyCorrect` tightened** — empty current + non-empty incoming now goes to `matched`.
-2. **Trace by Student #** input in Backfill Preview reports roster presence, current fields, derived ID hits, and bucket.
-3. **Per-row write log** with `{ studentId, studentNumber, externalNumber, status, error? }`, summary panel, CSV download.
-4. **Post-commit `refetch()` + verification** — red banner if matched students still have empty `externalStudentNumber`.
-5. **Expandable unmatched / ambiguous lists** with `derivedCodedId`, `externalNumber`, `initials`, `section`, `rosterNumber`.
+The trace confirms it: the workbook is parsed, all other columns are detected, but the **Board number column → NOT FOUND**. Because `parseSheet` early-returns when `iExt === -1`, every row is dropped, so no `derivedCodedId` is ever produced for `4F-14` (or any other student). The matcher code is fine — it just never receives any rows.
 
-Nothing new to build for that scope.
+The header for the board ID in `Class_list_for_data_tracker_app.xlsx` doesn't match any current alias in `HEADER_ALIASES.externalNumber`. We don't need to keep guessing aliases — we need to let the user pick the column themselves from the headers the parser already sees.
 
-## What to do next — actually trace `4F-14`
+### What this build will do
 
-Re-open **Students → Backfill Board Numbers**, re-upload the same workbook, and in the Backfill Preview type `4F-14` into the trace input. The result will fall into exactly one of these cases. Each has a one-line follow-up fix.
+**1. `src/lib/backfillParser.ts` — accept a manual override**
 
-**Case A — "Not in roster"**
-The in-memory `students` array doesn't include `4F-14`. Causes: wrong `schoolId` context, teacher-role homeroom filter excluding `4F`, or the doc's `studentNumber` has hidden whitespace / different case.
-Follow-up: I'll add a normalized roster lookup (`trim().toUpperCase()`) on `studentNumber` / `stableStudentId` keys in `buildMatchPlan`.
+- Add an optional second argument: `parseBackfillFile(file, overrides?: { externalNumber?: string })`.
+- Inside `parseSheet`, if `overrides.externalNumber` is provided, look it up in `headers` by case-insensitive exact match and use that index instead of running the alias search for `externalNumber`.
+- When the override resolves, do NOT push the "missing required column" warning, and do NOT early-return.
+- Always populate `allHeaders` from the first sheet that has any header row, even when parsing fails — so the UI can show the chips.
+- Broaden `HEADER_ALIASES.externalNumber` defensively with: `'oen'`, `'ontario education number'`, `'student id'`, `'student id number'`, `'board id'`, `'board #'`, `'board no'`, `'board no.'`. Keep `'student #'` OUT of this list (it collides with the roster ordinal).
 
-**Case B — "In roster, but no backfill row produced `derivedCodedId = 4F-14`"**
-The workbook's row for that student has a missing/blank Student # ordinal or a Section value that isn't `4F`.
-Follow-up: open the unmatched list, find the row by initials, and either fix the source file or extend `HEADER_ALIASES.rosterNumber` for the actual header used.
+**2. `src/components/tabs/StudentsTab.tsx` — header picker UI**
 
-**Case C — "Landed in `unmatched` / `ambiguous`"**
-Derived ID built correctly but didn't match the roster key. Almost certainly a normalization gap (whitespace, trailing `.0`, case).
-Follow-up: same normalized lookup as Case A.
+In the Backfill Preview dialog:
 
-**Case D — "Landed in `matched`, but post-commit banner is red"**
-The Firestore `updateDoc` was rejected. Check `firestore.rules` for `students` write permissions for the current user's role/schoolId.
-Follow-up: open `firestore.rules`, confirm the admin write rule on `/students/{id}` allows partial updates with `externalStudentNumber`.
+- Keep the existing "Detected columns" block.
+- When `detectedColumns.externalNumber` is null, render below it: "Select the column that contains the board student number:" followed by all `parseResult.allHeaders` as clickable chips (Badge components, click-to-select).
+- Clicking a chip:
+  1. Stores the header in component state `backfillColumnOverride: string | null`.
+  2. Re-runs `parseBackfillFile(backfillFile, { externalNumber: chipText })` against the cached `File` object.
+  3. Re-runs `buildMatchPlan(rows, students)` and replaces `backfillPlan`.
+- Highlight the currently selected chip (filled vs outline variant).
+- If the override produces zero matched rows, show a small hint: "Selected column has no values that look like board IDs — try another."
 
-**Case E — "Landed in `alreadyCorrect`"**
-Should now be impossible after fix #1. If it still happens, the file row's external number equals the student's existing one — meaning the student already has a board ID and you're looking at a different field in Firestore.
+**3. State & wiring**
 
-## Action requested from you
+- Cache the uploaded `File` in state (`backfillFile: File | null`) so re-parsing doesn't require a re-upload.
+- Reset `backfillColumnOverride` and `backfillFile` when the dialog closes.
+- All existing diagnostics (trace input, per-row write log, post-commit refetch + verification banner, unmatched/ambiguous tables) stay exactly as they are.
 
-Run the trace for `4F-14` and tell me which case (A–E) shows. I'll then ship the single targeted fix instead of another speculative pass.
+### Files to update
+
+- `src/lib/backfillParser.ts` — accept `overrides`, expand aliases, always return `allHeaders`.
+- `src/components/tabs/StudentsTab.tsx` — cache uploaded file, render header chips when board column missing, wire chip click → re-parse → re-plan.
+
+### Out of scope
+
+- No matcher algorithm changes.
+- No Firestore rule, schema, or import-wizard changes.
+- No persistence of the override beyond the current session.
+
+### Expected outcome
+
+Re-open Backfill, upload `Class_list_for_data_tracker_app.xlsx`. The "Board number column → NOT FOUND" line is now followed by a row of clickable header chips from the actual file. Click the one that holds the board IDs (e.g. `OEN`, `Student ID`, or whatever the file uses). The plan rebuilds in place, `4F-14` moves into `matched`, and Confirm writes `externalStudentNumber` to every matched student. The post-commit verification banner stays green.
 
