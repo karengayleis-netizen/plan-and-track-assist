@@ -315,7 +315,7 @@ export function useImportWizard(onComplete?: () => void) {
 
     setState(s => ({ ...s, result, importing: false, step: WS.ImportResults }));
     onComplete?.();
-  }, [user, state.source, state.importRows, state.columnMapping, state.headers, state.fileName, onComplete]);
+  }, [user, state.source, state.importRows, state.columnMapping, state.headers, state.fileName, state.rawRows, onComplete]);
 
   // Step 6: Templates
   const loadTemplates = useCallback(async () => {
