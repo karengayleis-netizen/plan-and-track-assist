@@ -67,7 +67,7 @@ const STUDENT_IDENTIFIER_DENY_LIST = new Set([
   'student #', 'student#', 'student no', 'student no.',
   'roster number', 'roster #', 'roster no', 'roster',
   'student number in class', 'class number', 'seat number', 'seat #',
-  '#', 'no', 'no.',
+  'number', '#', 'no', 'no.',
 ]);
 
 const COLUMN_ALIASES: Record<InternalField, string[]> = {
