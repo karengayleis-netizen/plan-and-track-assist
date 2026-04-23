@@ -116,7 +116,10 @@ export function useImportWizard(onComplete?: () => void) {
 
     // Hard block: identifier must be valid (in allow-list, not in deny-list).
     const idValidity = validateStudentIdentifierMapping(state.columnMapping.studentIdentifier, state.headers);
-    const validReason = idValidity.valid ? 'ok' : idValidity.reason;
+    let validReason = 'ok';
+    if (idValidity.valid === false) {
+      validReason = idValidity.reason;
+    }
     const sample = idValidity.valid
       ? state.rawRows.slice(0, 5).map(r => r[idValidity.columnIndex]?.trim() || '')
       : [];
