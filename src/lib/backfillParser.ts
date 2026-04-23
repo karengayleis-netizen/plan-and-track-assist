@@ -58,6 +58,18 @@ export const normalizeInitials = (s: string): string =>
 export const normalizeHomeroom = (s: string): string =>
   (s || '').toUpperCase().trim();
 
+// Strip trailing letters from a homeroom code to get the numeric stem.
+// e.g. "4AF" -> "4", "1BF" -> "1", "23F" -> "23", "K1" -> "K1"
+export const homeroomStem = (s: string): string => {
+  const norm = normalizeHomeroom(s);
+  const numMatch = norm.match(/^(\d+)/);
+  if (numMatch) return numMatch[1];
+  // No leading digits — return the leading letter run (e.g. "K1" -> "K", "JK" -> "JK")
+  const letterMatch = norm.match(/^([A-Z]+)/);
+  if (letterMatch) return letterMatch[1];
+  return norm;
+};
+
 const cleanCell = (v: unknown): string => {
   if (v == null) return '';
   let s = String(v).trim();
