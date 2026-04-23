@@ -14,6 +14,7 @@ interface PreviewStepProps {
   studentsLoading?: boolean;
   classCodeMapped?: boolean;
   students?: Array<{ externalStudentNumber?: string; stableStudentId?: string; studentNumber?: string }>;
+  identifierColumnIndex?: number;
 }
 
 const statusColors: Record<string, string> = {
@@ -22,7 +23,7 @@ const statusColors: Record<string, string> = {
   error: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
-export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading, classCodeMapped, students }: PreviewStepProps) {
+export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading, classCodeMapped, students, identifierColumnIndex }: PreviewStepProps) {
   const [homeroomFilter, setHomeroomFilter] = useState<string>('all');
 
   // Collect unique homerooms from rows
@@ -73,9 +74,10 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
 
       {/* No-match diagnostic banner */}
       {!studentsLoading && matchedCount === 0 && rows.length > 0 && (() => {
-        // Collect unique unmatched student IDs from raw CSV
+        // Collect unique unmatched student IDs from the mapped identifier column
+        const idCol = typeof identifierColumnIndex === 'number' && identifierColumnIndex >= 0 ? identifierColumnIndex : 0;
         const uniqueUnmatchedIds = Array.from(
-          new Set(rows.map(r => (r.rawValues?.[0] ?? '').trim()).filter(Boolean))
+          new Set(rows.map(r => (r.rawValues?.[idCol] ?? '').trim()).filter(Boolean))
         );
         // Build roster ID set across all 3 identity fields
         const rosterIdSet = new Set<string>();

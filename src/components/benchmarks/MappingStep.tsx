@@ -41,8 +41,25 @@ export function MappingStep({ headers, mapping, onUpdateMapping, onConfirm, onBa
   });
   const showClassNameHint = classNameHeaderIdx >= 0 && mapping.classCode < 0;
 
+  // Hint: detect roster-ordinal vs board-ID identifier columns
+  const rosterOrdinalIdx = headers.findIndex(h => {
+    const l = h.toLowerCase().trim();
+    return l === 'student #' || l === 'student#' || l === '#' || l === 'roster #' || l === 'roster number';
+  });
+  const boardIdIdx = headers.findIndex(h => {
+    const l = h.toLowerCase().trim();
+    return l === 'student number' || l === 'studentnumber' || l === 'student_number' || l === 'board number' || l === 'board id';
+  });
+  const showIdentifierHint = rosterOrdinalIdx >= 0 && boardIdIdx >= 0;
+
   return (
     <div className="space-y-4">
+      {showIdentifierHint && (
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 text-xs">
+          Detected both <strong>"{headers[rosterOrdinalIdx]}"</strong> (roster ordinal: 1, 2, 3…) and <strong>"{headers[boardIdIdx]}"</strong> (board ID).
+          {' '}Using <strong>"{mapping.studentIdentifier >= 0 ? headers[mapping.studentIdentifier] : '— not mapped —'}"</strong> as Student Number. Change below if needed.
+        </div>
+      )}
       {showClassNameHint && (
         <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-xs">
           Detected a <strong>"{headers[classNameHeaderIdx]}"</strong> column — consider mapping it to <strong>Class Code</strong> so homeroom info is saved with each benchmark.
