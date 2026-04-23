@@ -15,7 +15,7 @@ const presets: Record<ImportSource, SourcePreset> = {
     description: 'Import Acadience / CBMReading benchmark data. Default family: Reading.',
     assessmentFamily: 'reading',
     suggestedHeaders: {
-      studentIdentifier: ['Student Number', 'Student ID', 'Number'],
+      studentIdentifier: ['Student Number', 'Student ID', 'Board Number', 'External Student Number'],
       assessmentType: ['Measure', 'Type'],
       score: ['Score', 'Composite'],
       date: ['Date', 'Assessment Date'],
