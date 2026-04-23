@@ -44,7 +44,7 @@ export function MappingStep({ headers, mapping, onUpdateMapping, onConfirm, onBa
   // Hint: detect roster-ordinal vs board-ID identifier columns
   const rosterOrdinalIdx = headers.findIndex(h => {
     const l = h.toLowerCase().trim();
-    return l === 'student #' || l === 'student#' || l === '#' || l === 'roster #' || l === 'roster number';
+    return l === 'student #' || l === 'student#' || l === 'number' || l === '#' || l === 'roster #' || l === 'roster number';
   });
   const boardIdIdx = headers.findIndex(h => {
     const l = h.toLowerCase().trim();
