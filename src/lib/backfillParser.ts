@@ -2,18 +2,6 @@ import * as XLSX from 'xlsx';
 
 export type MatchSource = 'codedId' | 'initialsHomeroom' | 'initialsHomeroomStem' | 'manualResolution';
 
-// Strip trailing letters from a homeroom code to get the numeric stem.
-// e.g. "4AF" -> "4", "1BF" -> "1", "23F" -> "23", "K1" -> "K"
-export const homeroomStem = (s: string): string => {
-  const norm = normalizeHomeroom(s);
-  const m = norm.match(/^([A-Z]*\d+|[A-Z]+)/);
-  // Prefer the leading numeric chunk; fall back to leading letters (e.g. "K")
-  const numMatch = norm.match(/^(\d+)/);
-  if (numMatch) return numMatch[1];
-  if (m) return m[1];
-  return norm;
-};
-
 export interface BackfillRow {
   initials: string;
   externalNumber: string;       // board ID e.g., "1027516"
