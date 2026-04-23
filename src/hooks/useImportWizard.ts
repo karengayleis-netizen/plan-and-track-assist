@@ -138,29 +138,83 @@ export function useImportWizard(onComplete?: () => void) {
     // Build rows + match students by studentNumber
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
-    // Normalize identifier: trim, strip leading zeros (for numeric IDs)
-    const normalize = (v: string | undefined): string => {
-      if (!v) return '';
-      const trimmed = v.trim();
-      if (/^\d+$/.test(trimmed)) return trimmed.replace(/^0+/, '') || '0';
-      return trimmed;
+    // Normalize identifier: stringify, trim, strip trailing ".0", strip leading zeros for pure-numeric
+    const normalize = (v: unknown): string => {
+      const s = String(v ?? '').trim().replace(/\.0+$/, '');
+      if (!s) return '';
+      if (/^\d+$/.test(s)) return s.replace(/^0+/, '') || '0';
+      return s.toLowerCase();
     };
+
+    // Build indexed lookup over roster: ext → stable → studentNumber
+    const byExternal = new Map<string, typeof students[number]>();
+    const byStable = new Map<string, typeof students[number]>();
+    const byStudentNumber = new Map<string, typeof students[number]>();
+    for (const s of students) {
+      const ext = normalize(s.externalStudentNumber);
+      const stb = normalize(s.stableStudentId);
+      const num = normalize(s.studentNumber);
+      if (ext && !byExternal.has(ext)) byExternal.set(ext, s);
+      if (stb && !byStable.has(stb)) byStable.set(stb, s);
+      if (num && !byStudentNumber.has(num)) byStudentNumber.set(num, s);
+    }
+
+    console.log('[ImportWizard] Roster indexed for matching:', {
+      rosterCount: students.length,
+      byExternalCount: byExternal.size,
+      byStableCount: byStable.size,
+      byStudentNumberCount: byStudentNumber.size,
+      sampleExternal: Array.from(byExternal.keys()).slice(0, 5),
+      sampleStable: Array.from(byStable.keys()).slice(0, 5),
+      sampleStudentNumber: Array.from(byStudentNumber.keys()).slice(0, 5),
+    });
+
+    let firstMissLogged = 0;
 
     const matched = rows.map((row) => {
       const identifierIdx = state.columnMapping.studentIdentifier;
-      const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx]?.trim() : '';
+      const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx] : '';
       const normIdentifier = normalize(rawIdentifier);
 
       // Extract CSV homeroom if mapped
       const classCodeIdx = state.columnMapping.classCode;
       const csvHomeroom = classCodeIdx >= 0 ? row.rawValues[classCodeIdx]?.trim() || '' : '';
 
-      if (!rawIdentifier) return { ...row, csvHomeroom: csvHomeroom || undefined };
+      if (!normIdentifier) return { ...row, csvHomeroom: csvHomeroom || undefined };
 
-      // 3-tier match: stableStudentId → studentNumber → externalStudentNumber
-      const student = students.find(s => normalize(s.stableStudentId) === normIdentifier)
-        || students.find(s => normalize(s.studentNumber) === normIdentifier)
-        || students.find(s => normalize(s.externalStudentNumber) === normIdentifier);
+      // 3-tier match: externalStudentNumber → studentNumber → stableStudentId
+      let matchedField: 'externalStudentNumber' | 'studentNumber' | 'stableStudentId' | null = null;
+      let student = byExternal.get(normIdentifier);
+      if (student) matchedField = 'externalStudentNumber';
+      if (!student) {
+        student = byStudentNumber.get(normIdentifier);
+        if (student) matchedField = 'studentNumber';
+      }
+      if (!student) {
+        student = byStable.get(normIdentifier);
+        if (student) matchedField = 'stableStudentId';
+      }
+
+      if (!student && firstMissLogged < 5) {
+        firstMissLogged++;
+        console.log('[ImportWizard] No match for row', row.rowIndex, {
+          rawIdentifier: String(rawIdentifier ?? ''),
+          normalized: normIdentifier,
+          csvHomeroom,
+          checked: ['externalStudentNumber', 'studentNumber', 'stableStudentId'],
+          inExternal: byExternal.has(normIdentifier),
+          inStudentNumber: byStudentNumber.has(normIdentifier),
+          inStable: byStable.has(normIdentifier),
+        });
+      } else if (student && firstMissLogged === 0 && row.rowIndex < 3) {
+        console.log('[ImportWizard] Match for row', row.rowIndex, {
+          rawIdentifier: String(rawIdentifier ?? ''),
+          normalized: normIdentifier,
+          matchedField,
+          studentId: student.id,
+          studentHomeroom: student.homeroom,
+        });
+      }
 
       if (student) {
         const matchedHomeroom = student.homeroom || '';
