@@ -197,6 +197,27 @@ export function useImportWizard(onComplete?: () => void) {
   const runImport = useCallback(async () => {
     if (!user || !state.source) return;
 
+    // Hard block: identifier mapping must still be valid before importing.
+    const idValidity = validateStudentIdentifierMapping(state.columnMapping.studentIdentifier, state.headers);
+    let runReason = 'ok';
+    if (idValidity.valid === false) {
+      runReason = idValidity.reason;
+    }
+    const sample = idValidity.valid
+      ? state.rawRows.slice(0, 5).map(r => r[idValidity.columnIndex]?.trim() || '')
+      : [];
+    console.log('[ImportWizard] runImport studentIdentifier check:', {
+      columnIndex: state.columnMapping.studentIdentifier,
+      headerName: idValidity.headerName,
+      valid: idValidity.valid,
+      reason: runReason,
+      first5Values: sample,
+    });
+    if (!idValidity.valid) {
+      console.warn('[ImportWizard] runImport blocked — invalid studentIdentifier mapping');
+      return;
+    }
+
     setState(s => ({ ...s, importing: true }));
 
     const preset = getPreset(state.source);
