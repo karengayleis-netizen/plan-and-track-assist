@@ -335,7 +335,25 @@ export function useImportWizard(onComplete?: () => void) {
   }, [user?.schoolId, state.source]);
 
   const applyTemplate = useCallback((template: ImportTemplate) => {
-    setState(s => ({ ...s, columnMapping: template.columnMap }));
+    setState(s => {
+      const incoming = { ...template.columnMap };
+      // Revalidate the template's identifier choice against current file's headers.
+      const v = validateStudentIdentifierMapping(incoming.studentIdentifier, s.headers);
+      let tplReason = 'ok';
+      if (v.valid === false) tplReason = v.reason;
+      console.log('[ImportWizard] Template applied — studentIdentifier check:', {
+        source: 'template',
+        columnIndex: incoming.studentIdentifier,
+        headerName: v.headerName,
+        valid: v.valid,
+        reason: tplReason,
+      });
+      if (!v.valid) {
+        // Refuse to carry over a denied/non-allowed identifier mapping.
+        incoming.studentIdentifier = -1;
+      }
+      return { ...s, columnMapping: incoming };
+    });
   }, []);
 
   const saveTemplate = useCallback(async (name: string) => {
