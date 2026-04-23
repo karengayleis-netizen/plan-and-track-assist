@@ -1,70 +1,60 @@
 
 
-## Make the backfill failure visible — add diagnostics + roster coverage indicator
+## Fix: stop auto-mapping "Student #" (roster ordinal) as the student identifier
 
-We've changed the matcher twice and we're still guessing. The 448 failed rows all reference real board IDs (`1027516`, `1035148`...), and the only way these still fail is if the matching `externalStudentNumber` was never written to those students. Let's stop guessing and surface the truth in the UI.
+### Root cause
 
-### What we'll add
+In `src/lib/csvParser.ts`, the `studentIdentifier` aliases list includes the bare token `'number'`. The Acadience export has a `Student #` column (the in-class ordinal: 1, 2, 3...) that appears **before** `Student Number` (the actual board ID). After the previous fix added `Student #` aliases for `classCode`/backfill awareness, `Student #` now also normalizes to something that collides — and `'number'` matches it first.
 
-**1. Roster coverage indicator on the Students tab**
-A small stat card at the top of the Students tab:
+Result: the wizard reads `1, 2, 3, ...` as the student identifier instead of `1027516, 1035148, ...`. None of those tiny numbers match any roster ID, so all 448 rows fail.
 
-> **Board IDs backfilled: 47 / 252 students (19%)**
+The CSV columns for assessment, score, date, and homeroom map correctly — which exactly matches what you reported.
 
-So you can see at a glance whether the backfill actually populated `externalStudentNumber` across the roster, without opening Firebase Console.
+### The fix
 
-**2. "Detected columns" panel in the backfill upload preview**
-Before showing the match summary, show what the parser actually saw in your file:
+**1. `src/lib/csvParser.ts` — tighten `studentIdentifier` aliases**
 
-```
-Detected columns from your file:
-  • Initials column      → "Student Initials"   ✓
-  • Board number column  → "Student Number"     ✓
-  • Section/Homeroom     → "Section Number"     ✓
-  • Roster ordinal (#)   → NOT FOUND  ✗ ← this is why nothing matched by coded ID
-  • Grade column         → "Grade"              ✓
-```
+Remove the over-broad `'number'` alias and explicitly exclude roster-ordinal headers:
 
-If "Roster ordinal" is `NOT FOUND`, the derived-ID match path can't run and everything falls back to fragile initials matching. This single line will tell us the answer immediately.
+- Drop `'number'` from `studentIdentifier` aliases.
+- Keep the strong, unambiguous ones: `student number`, `studentnumber`, `student_number`, `student id`, `student_id`, `pupil id`, `stable id`, `stablestudentid`, `stable_student_id`, `id`, `board number`, `board id`, `external student number`.
+- Add an explicit deny-list for roster-ordinal headers so they can never be picked as identifier: `student #`, `student#`, `roster number`, `roster #`, `student number in class`, `class number`, `seat number`, `#`.
 
-**3. Show 5 sample rows the parser actually built**
-Right under detected columns, show the first 5 parsed rows with all extracted fields, so you can verify the parser read the right cells:
+**2. `src/lib/csvParser.ts` — make `detectColumnMapping` skip denied headers**
 
-```
-Sample parsed rows:
-  Row 2: section="1AF" #="1" initials="SKB" board="1027516" → derives ID "1AF-1"
-  Row 3: section="1AF" #="2" initials="JTM" board="1035148" → derives ID "1AF-2"
-  ...
-```
+When iterating headers for `studentIdentifier`, if the header (lowercased/trimmed) is in the deny-list, skip it even if a loose alias would match. This guarantees `Student #` is never auto-selected as the identifier, regardless of column order.
 
-**4. Show the first 10 unmatched rows in full**
-Currently the dialog shows counts. Switch the unmatched section to a small table with: row #, section, ordinal #, initials, derived ID, board ID, and the reason — exactly the info needed to compare against the actual roster.
+**3. `src/components/benchmarks/MappingStep.tsx` — surface the conflict**
 
-**5. Benchmark wizard: list unique unmatched IDs, not just row count**
-On the failed-rows screen, add a one-line summary:
+If the file contains both a roster-ordinal column (`Student #`) and a board-ID column (`Student Number`), show a small inline hint under the Student Identifier dropdown:
 
-> **448 failed rows represent 51 unique student IDs.**
-> First 10 unmatched IDs: 1027516, 1035148, 1046969, 1049989, 1050879, ...
-> Of these, 0 are present as `externalStudentNumber` on any student in the roster.
+> Detected both `Student #` (roster ordinal) and `Student Number` (board ID). Using `Student Number`. Change here if needed.
 
-Then it's obvious whether the issue is "backfill didn't reach these students" vs. "matcher has a bug."
+This makes the auto-mapping decision visible and overridable.
+
+**4. `src/components/benchmarks/PreviewStep.tsx` — improve the unmatched-IDs sample**
+
+The current "first 10 unmatched IDs" snippet reads from `rawValues[0]`, which is whichever column happens to be first — not necessarily the mapped identifier. Change it to read from `rawValues[columnMapping.studentIdentifier]` so the diagnostic always shows the actual IDs the matcher tried.
+
+This requires passing `columnMapping` (or a resolved `identifierColumnIndex`) from `ImportWizard` → `PreviewStep`.
 
 ### Files to update
 
-- `src/components/tabs/StudentsTab.tsx` — roster coverage stat at top; richer backfill preview dialog (detected columns, sample parsed rows, full unmatched table)
-- `src/lib/backfillParser.ts` — return `detectedColumns` (which header was picked for each field, or `null`) and `sampleRows` (first 5 parsed `BackfillRow`s) on `BackfillParseResult`
-- `src/components/benchmarks/PreviewStep.tsx` — unique unmatched ID summary with roster cross-check
+- `src/lib/csvParser.ts` — remove `'number'`; add deny-list; respect deny-list in `detectColumnMapping`
+- `src/components/benchmarks/MappingStep.tsx` — show conflict hint when both columns present
+- `src/components/benchmarks/PreviewStep.tsx` — read unmatched-IDs from the mapped identifier column
+- `src/components/benchmarks/ImportWizard.tsx` — pass identifier column index to `PreviewStep`
 
-### What this does NOT change
+### Out of scope
 
-- No matcher logic changes
-- No data writes
-- No schema changes
-- No Firestore rule changes
-
-This is purely diagnostic instrumentation so we can see what's actually happening and fix the real cause on the next pass.
+- No matcher logic changes in `useImportWizard.ts` — it's already correct.
+- No backfill changes — the previous backfill work stays.
+- No Firestore, schema, or rule changes.
 
 ### Expected outcome
 
-After this ships, re-upload the workbook in **Backfill Board Numbers**. The dialog will tell us in plain text which header was missed (almost certainly the ordinal column), or that the derived IDs don't exist in the roster. Then the fix is one line — either a new alias or a roster ID format adjustment — instead of another round of speculation.
+Re-uploading the same Acadience CSV (no other action needed):
+- The wizard auto-maps `Student Number` (board ID) — not `Student #` (1, 2, 3) — as the identifier.
+- The 448 rows match against `externalStudentNumber` on the roster as intended.
+- The diagnostic banner, if it ever shows again, will list real board IDs (`1027516`, ...) instead of `1, 2, 3`.
 
