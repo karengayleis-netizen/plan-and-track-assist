@@ -85,37 +85,45 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
       {/* No-match diagnostic banner — only when identifier IS mapped */}
       {!studentsLoading && matchedCount === 0 && rows.length > 0 && typeof identifierColumnIndex === 'number' && identifierColumnIndex >= 0 && (() => {
         const idCol = identifierColumnIndex;
-        const idHeader = rows[0]?.rawValues && idCol < rows[0].rawValues.length ? '' : '';
-        const uniqueUnmatchedIds = Array.from(
-          new Set(rows.map(r => (r.rawValues?.[idCol] ?? '').trim()).filter(Boolean))
+        const normalize = (v: unknown): string => {
+          const s = String(v ?? '').trim().replace(/\.0+$/, '');
+          if (!s) return '';
+          if (/^\d+$/.test(s)) return s.replace(/^0+/, '') || '0';
+          return s.toLowerCase();
+        };
+        const uniqueUnmatchedIdsRaw = Array.from(
+          new Set(rows.map(r => String(r.rawValues?.[idCol] ?? '').trim()).filter(Boolean))
         );
-        const rosterIdSet = new Set<string>();
+        const uniqueUnmatchedNorm = uniqueUnmatchedIdsRaw.map(normalize);
+        const rosterExt = new Set<string>();
+        const rosterStable = new Set<string>();
+        const rosterNum = new Set<string>();
         (students ?? []).forEach(s => {
-          if (s.externalStudentNumber) rosterIdSet.add(String(s.externalStudentNumber).trim());
-          if (s.stableStudentId) rosterIdSet.add(String(s.stableStudentId).trim());
-          if (s.studentNumber) rosterIdSet.add(String(s.studentNumber).trim());
+          const e = normalize(s.externalStudentNumber); if (e) rosterExt.add(e);
+          const st = normalize(s.stableStudentId); if (st) rosterStable.add(st);
+          const n = normalize(s.studentNumber); if (n) rosterNum.add(n);
         });
-        const presentInRoster = uniqueUnmatchedIds.filter(id => rosterIdSet.has(id)).length;
-        const sampleIds = uniqueUnmatchedIds.slice(0, 10);
+        const presentInRoster = uniqueUnmatchedNorm.filter(id => rosterExt.has(id) || rosterStable.has(id) || rosterNum.has(id)).length;
+        const sampleIds = uniqueUnmatchedIdsRaw.slice(0, 10);
         return (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
             <p className="font-medium text-destructive mb-1">Student IDs did not match any roster records</p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              Reading from mapped column index <strong>{idCol}</strong>{idHeader ? ` (“${idHeader}”)` : ''}. <strong>{rows.length} failed rows</strong> represent <strong>{uniqueUnmatchedIds.length} unique IDs</strong>.
+              Reading from mapped column index <strong>{idCol}</strong>. <strong>{rows.length} failed rows</strong> represent <strong>{uniqueUnmatchedIdsRaw.length} unique IDs</strong>. Roster has <strong>{students?.length ?? 0}</strong> students ({rosterExt.size} with externalStudentNumber, {rosterNum.size} with studentNumber, {rosterStable.size} with stableStudentId).
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed mt-1">
               First {sampleIds.length} unmatched IDs from the mapped column: <code className="px-1 bg-muted rounded text-[11px]">{sampleIds.join(', ')}</code>
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed mt-1">
-              Of these, <strong className={presentInRoster === 0 ? 'text-destructive' : 'text-warning'}>{presentInRoster}</strong> are present on any student in the roster (as External, Stable, or Student Number).
+              Of these, <strong className={presentInRoster === 0 ? 'text-destructive' : 'text-warning'}>{presentInRoster}</strong> are present on any student in the roster (after normalization).
             </p>
             {presentInRoster === 0 ? (
               <p className="text-muted-foreground text-xs leading-relaxed mt-2">
-                → This benchmark file is using <strong>board IDs</strong> that are not yet on the roster. Re-run the <strong>Backfill Board Numbers (whole-school)</strong> tool on the Students tab using a class list with <strong>Section Number</strong> + <strong>Student #</strong> columns. Then re-import this file.
+                → These board IDs are not on any roster student. Re-run the <strong>Backfill Board Numbers</strong> tool on the Students tab. Open the browser console for per-row match diagnostics.
               </p>
             ) : (
               <p className="text-muted-foreground text-xs leading-relaxed mt-2">
-                → IDs exist in the roster but matching still fails. This points to a matcher bug or normalization issue, not a backfill gap.
+                → IDs exist in the roster but matching still fails. Check the browser console for the per-row match log to see which field was checked.
               </p>
             )}
           </div>
