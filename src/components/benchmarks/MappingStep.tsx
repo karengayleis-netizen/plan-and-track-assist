@@ -50,10 +50,11 @@ export function MappingStep({ headers, mapping, onUpdateMapping, onConfirm, onBa
   const showBothColumnsHint = rosterOrdinalIdx >= 0 && boardIdIdx >= 0;
 
   let invalidIdReason = '';
-  if (!idValidity.valid) {
-    if (idValidity.reason === 'denied') {
+  if (idValidity.valid === false) {
+    const reason = idValidity.reason;
+    if (reason === 'denied') {
       invalidIdReason = `"${idValidity.headerName}" is a roster-ordinal column (1, 2, 3…). It cannot be used for matching. Please select Student Number / board ID.`;
-    } else if (idValidity.reason === 'not-allowed') {
+    } else if (reason === 'not-allowed') {
       invalidIdReason = `"${idValidity.headerName}" is not a recognized board ID column. Please select a Student Number / board ID column manually.`;
     } else {
       invalidIdReason = 'No valid student identifier column was found automatically. Please select Student Number / board ID manually.';
