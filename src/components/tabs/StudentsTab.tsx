@@ -1018,10 +1018,13 @@ export function StudentsTab() {
                   </div>
                   {backfillVerifyMisses.length > 0 && (
                     <div className="rounded border border-destructive/40 bg-destructive/10 p-2 text-[11px] font-mono">
-                      <p className="text-destructive font-semibold mb-1">⚠ {backfillVerifyMisses.length} write(s) reported success but did NOT persist in the roster after refetch — likely Firestore rules rejection.</p>
-                      <div className="max-h-32 overflow-auto">
-                        {backfillVerifyMisses.slice(0, 10).map((m, i) => (
-                          <p key={i}>• {m.studentNumber} (id={m.studentId}) expected="{m.expected}"</p>
+                      <p className="text-destructive font-semibold mb-1">⚠ {backfillVerifyMisses.length} write(s) reported success but did NOT verify via direct getDoc.</p>
+                      <p className="text-muted-foreground mb-2">Your schoolId: <span className="font-semibold">{user?.schoolId || '∅'}</span>. If a doc's schoolId differs, the rule rejected the write or the doc is hidden by your roster query.</p>
+                      <div className="max-h-40 overflow-auto space-y-1">
+                        {backfillVerifyMisses.slice(0, 20).map((m, i) => (
+                          <p key={i}>
+                            • {m.studentNumber} (id={m.studentId}) expected="{m.expected}" actual="{m.actual || '∅'}" docExists={String(m.docExists)} docSchoolId="{m.docSchoolId}" — {m.reason}
+                          </p>
                         ))}
                       </div>
                     </div>
