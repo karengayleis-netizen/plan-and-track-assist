@@ -1,72 +1,59 @@
 
 
-## Fix the Backfill matching for the new file format — homeroom normalization + ambiguity resolver
+## Diagnose & fix the "4 writes succeeded but didn't persist" backfill issue
 
-### What the trace actually shows
+### What we know from the trace
 
-The file is parsing correctly. All 4 columns auto-detect. The real issues are downstream:
+- 37 writes attempted, 37 reported "success" at the `updateDoc` level, but 4 specific students (`1AF-7`, `1AF-13`, `1BF-6`, `1BF-16`) come back from the roster refetch still empty.
+- User is **admin** of `folkstone_ps` (confirmed in the JWT — `role:"admin", schoolId:"folkstone_ps"`).
+- Firestore rule for student updates: `allow update: if resourceSameSchool() && requestSameSchool();`
+- `useStudents.updateStudent` only sends `{ externalStudentNumber, updatedAt, lastUpdated }` — no `schoolId`. In Firestore, `request.resource.data` is the **merged** post-update doc, so `schoolId` survives — UNLESS the existing doc has no `schoolId` field at all (legacy import).
 
-1. **Homeroom code mismatch** is the dominant cause of the 164 "no match" rows. Example: roster `4F-14` (J.P.E.) lives in homeroom **`4F`**, but the file lists J.P.E. in **`3AF`**. Other likely mismatches in your roster vs file: `4F` vs `4AF`, `5F` vs `5AF`, `2F` vs `2AF`, `3F` vs `3AF`, `1F` vs `1AF/1BF`. The parser does a strict uppercase-trim compare, so `4F ≠ 4AF`.
-2. **Genuine duplicates** in the file — same initials, same homeroom — must be resolved manually (parser cannot guess which student is which).
-3. **Misleading "273 missing Student #" diagnostic** — this file format never has a roster ordinal, so the warning is noise.
+### The most likely root cause
 
-### What this build will do
+These 4 student docs are missing a `schoolId` field on the existing document (legacy data from an earlier import that pre-dates the school-isolation rules). When you call `updateDoc` with only a partial payload:
+- The update **succeeds at the SDK level** because Firestore doesn't pre-validate against rules — wait, that's wrong. Rules DO block it and throw.
 
-**1. `src/lib/backfillParser.ts` — smarter homeroom matching**
+A second, more plausible scenario: the docs DO have `schoolId` but the value is stale/different (e.g. `""` or another school's ID). The query filters them OUT on refetch (`where('schoolId', '==', 'folkstone_ps')`), so the verification step looks for them in `students` array, doesn't find them, and reports them as "did not persist." The write may have actually succeeded — but to a doc the user can no longer see.
 
-Add a homeroom equivalence layer used only when the strict match yields zero hits:
+A third possibility: the doc has a unique-board-id check elsewhere, or the boardId conflicts with another row's, but there's no such rule today.
 
-- Strip trailing letters from homeroom codes (`4AF` → `4`, `1BF` → `1`, `23F` → `23`) to get a "stem".
-- When the strict `(initials, homeroom)` match returns 0 candidates, retry with `(initials, sameStem)` — i.e., find roster students whose initials match AND whose homeroom shares the file row's stem.
-- If exactly one roster student matches across the stem, accept it (still write `externalStudentNumber`); record `matchSource: 'initialsHomeroomStem'` for the diagnostics view.
-- If multiple match across the stem, route to ambiguous bucket as today.
+### The investigation step (no code yet)
 
-This catches `J.P.E.` in file `3AF` → roster `3AF` only if such a student exists, but importantly catches `4F`↔`4AF`, `5F`↔`5AF` style mismatches that are the actual cause of most 164 unmatched rows.
+Before changing code, we need to read those 4 specific docs directly from Firestore to see their actual `schoolId` value. Two ways:
 
-**2. `src/lib/backfillParser.ts` — drop misleading roster-ordinal warning when format is initials-driven**
+1. **Quickest** — open Firebase Console → Firestore → `students` collection → look up doc IDs `zczv996viRquAHpxxyvc`, `b7mKc4bGpP5uU0RWFbq0`, `CdlP82WK0Y5PWzODIsbU`, `SejuBADMIeMew6syECrv`. Inspect `schoolId` and `externalStudentNumber` fields.
+2. **In-app** — add a one-off "Inspect doc" debug button (admin only) that does `getDoc()` for an entered ID and prints all fields, bypassing the school filter.
 
-If the parsed sheet has `studentInitials` + `studentNumber` + `homeroom` but no `Student #` roster ordinal column, do NOT increment `missingRosterNumber` per row. Only count it when the file actually attempts to use coded IDs. This silences the "273 missing Student #" line when it's irrelevant.
+### The code fix (after investigation confirms cause)
 
-**3. `src/components/tabs/StudentsTab.tsx` — actionable unmatched table**
+**`src/hooks/useStudents.ts` — make `updateStudent` rule-safe and self-healing**
+- Always include `schoolId: user.schoolId` in the update payload. This guarantees `requestSameSchool()` passes even if the existing doc has a wrong/missing schoolId, and the `repairingMissingSchoolId` rule path (already in `firestore.rules`) covers admin self-heal.
+- Remove the `await fetchStudents()` call inside `updateStudent`. The backfill loop runs 37 sequential updates — that's 37 full collection refetches. Let the caller refetch once at the end.
+- Replace the silent `catch {}` with `catch (e)` and re-throw the original error so the backfill loop can show the actual Firestore error code (`permission-denied` vs `not-found`).
 
-Currently the unmatched table just lists rows. Add two columns / hints per unmatched row:
+**`src/components/tabs/StudentsTab.tsx` — improve verification + diagnostics**
+- After the backfill loop, instead of relying on the filtered `students` array for verification, do a direct `getDoc()` per write target to bypass the school filter. This distinguishes "write rejected" from "write succeeded but doc no longer visible to your query."
+- For each verify-miss, show the doc's actual `schoolId` and `externalStudentNumber` from the direct read in the diagnostic panel — so the cause is obvious next time.
+- Add a single "Refetch roster once" call at the end of the loop instead of inside each `updateStudent`.
 
-- "Closest roster initials in any homeroom" — show the homeroom code(s) where the same initials exist (e.g., `J.P.E. → roster has it in 3AF`). This makes the homeroom-mismatch problem instantly visible.
-- "Resolve" button per row → opens a small inline picker listing candidate roster students (any homeroom, same initials). Picking one writes the `externalStudentNumber` to that student. Skipping leaves it unmatched.
-
-**4. `src/components/tabs/StudentsTab.tsx` — inline ambiguity resolver**
-
-For the 8 ambiguous rows (e.g. two `S.S.P.` in `1AF`), add a "Resolve" button per row in the existing ambiguous list:
-
-- Opens a popover showing the candidate roster students with their `studentNumber` (coded ID like `1AF-3`), homeroom, grade, and any existing `externalStudentNumber`.
-- User clicks the right one → that single mapping moves into the matched bucket (`matchSource: 'manualResolution'`).
-- All resolutions are batched and written together when the user clicks Confirm.
-
-**5. `src/components/tabs/StudentsTab.tsx` — trace output upgrade**
-
-Extend the trace block so when `4F-14` is searched and no file row matched, it ALSO reports:
-
-- "File rows with same initials (J.P.E.) in any homeroom: row 15, section=3AF, board=970591"
-
-That's the single line that would have ended this debugging cycle on the first try.
-
-### Files to update
-
-- `src/lib/backfillParser.ts` — add homeroom-stem fallback in `buildMatchPlan`, suppress irrelevant ordinal warning, return `crossHomeroomInitialMatches` map for diagnostics.
-- `src/components/tabs/StudentsTab.tsx` — render "Resolve" buttons in unmatched + ambiguous tables, wire manual selection into the matched batch, extend trace output.
+**`src/lib/backfillParser.ts` — separate concern, same upload**
+- The trace also reports `L.M.C.` in roster `4F` not matched (file row 12 is `3AF-11 / L.M.C.`). The homeroom-stem fallback already exists but file `3AF` stem=`3` ≠ roster `4F` stem=`4`, so it correctly does not auto-match. This stays as an "unmatched, use Resolve picker" row — no code change needed.
 
 ### Out of scope
 
-- No changes to roster homeroom codes (your roster's `4F` vs file's `4AF` is a real data discrepancy — the resolver lets you fix it case-by-case without re-uploading).
-- No fuzzy initial matching (e.g., `J.P.E.` ≈ `J.E.P.`) — only homeroom is loosened.
-- No persistence of the manual mappings beyond the current Confirm action.
+- No fuzzy matching on initials.
+- No automatic moving of students between homerooms based on the file (preserving the current "boards write only, homerooms unchanged" behavior).
+- No bulk re-assignment of `schoolId` on legacy docs — the `repairingMissingSchoolId` rule + the always-include-schoolId fix handles new repairs as a side effect of any update.
 
 ### Expected outcome
 
-- Re-upload `Class_Lists_by_HRM_Initials_For_Backfill.xlsx`.
-- Most of the 164 unmatched collapse into matched once the homeroom-stem fallback catches `4F↔4AF` style mismatches.
-- The remaining truly-unmatched rows (different student than the file expected) get a one-click "Resolve" picker showing candidate roster students.
-- The 8 ambiguous rows each get a one-click resolver.
-- Trace `4F-14` now reports: "File row 15 has J.P.E. in section 3AF — click to map" instead of just "NO FILE ROW".
-- The "273 missing Student #" noise disappears for this file format.
+- Re-run backfill on the same file. Either (a) the 4 writes now persist (if the cause was a missing/stale `schoolId`), or (b) the diagnostic panel shows you the exact `schoolId` value on those 4 docs so we know to fix them in Firestore Console once.
+- Backfill is also significantly faster — one refetch at the end instead of 37.
+- Real Firestore errors propagate to the results CSV instead of being swallowed.
+
+### Files to change
+
+- `src/hooks/useStudents.ts` — include schoolId in update, drop per-update refetch, surface real errors.
+- `src/components/tabs/StudentsTab.tsx` — direct `getDoc` verification, end-of-loop refetch, richer diagnostic display.
 
