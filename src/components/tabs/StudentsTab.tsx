@@ -548,21 +548,8 @@ export function StudentsTab() {
     if (fail > 0) toast.error(`${fail} update${fail === 1 ? '' : 's'} failed`);
   };
 
-  // Verify writes after refetch — runs reactively when students reload
-  // Compare results against fresh roster
-  const verifyBackfillResults = (results: typeof backfillResults) => {
-    if (!results) return [];
-    const misses: Array<{ studentId: string; studentNumber: string; expected: string }> = [];
-    for (const r of results) {
-      if (r.status !== 'updated') continue;
-      const fresh = students.find(s => s.id === r.studentId);
-      const current = (fresh?.externalStudentNumber || '').trim();
-      if (!current || current !== r.externalNumber.trim()) {
-        misses.push({ studentId: r.studentId, studentNumber: r.studentNumber, expected: r.externalNumber });
-      }
-    }
-    return misses;
-  };
+  // Verification now uses direct getDoc() inside handleConfirmBackfill so it bypasses
+  // the school-filtered roster query. The reactive useEffect below is no longer needed.
 
   const downloadBackfillResultsCsv = () => {
     if (!backfillResults) return;
