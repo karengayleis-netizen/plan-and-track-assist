@@ -64,6 +64,7 @@ export function useImportWizard(onComplete?: () => void) {
     result: null,
     importing: false,
     templates: [],
+    idDiagnosis: emptyDiagnosis(),
   });
 
   const setStep = (step: WizardStep) => setState(s => ({ ...s, step }));
@@ -461,6 +462,7 @@ export function useImportWizard(onComplete?: () => void) {
       result: null,
       importing: false,
       templates: [],
+      idDiagnosis: emptyDiagnosis(),
     });
   }, []);
 
