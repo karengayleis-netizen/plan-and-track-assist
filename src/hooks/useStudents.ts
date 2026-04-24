@@ -97,7 +97,7 @@ export function useStudents() {
     }
   };
 
-  const updateStudent = async (id: string, updates: Partial<Student>) => {
+  const updateStudent = async (id: string, updates: Partial<Student>, opts?: { skipRefetch?: boolean }) => {
     // Basic validation for updates - ensure strings aren't too long
     if (updates.firstName && updates.firstName.length > 50) {
       throw new Error('First name must be 50 characters or less');
@@ -111,15 +111,24 @@ export function useStudents() {
 
     try {
       const now = new Date();
-      await updateDoc(doc(db, 'students', id), {
+      const payload: Record<string, unknown> = {
         ...updates,
         updatedAt: now,
         lastUpdated: now,
-      });
-      await fetchStudents();
-    } catch {
-      setError('Failed to update student');
-      throw new Error('Failed to update student');
+      };
+      // Always include schoolId so requestSameSchool() passes and legacy docs self-heal.
+      if (user?.schoolId) {
+        payload.schoolId = user.schoolId;
+      }
+      await updateDoc(doc(db, 'students', id), payload);
+      if (!opts?.skipRefetch) {
+        await fetchStudents();
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to update student';
+      setError(msg);
+      // Re-throw the original error so callers can inspect Firestore error codes.
+      throw e instanceof Error ? e : new Error(msg);
     }
   };
 

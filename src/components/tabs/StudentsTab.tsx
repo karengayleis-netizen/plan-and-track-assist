@@ -23,6 +23,8 @@ import { BulkActionsBar } from '@/components/students/BulkActionsBar';
 import { TagInput } from '@/components/ui/tag-input';
 import { Badge } from '@/components/ui/badge';
 import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow, type DetectedColumns } from '@/lib/backfillParser';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export function StudentsTab() {
   const { user } = useAuth();
@@ -54,7 +56,7 @@ export function StudentsTab() {
   const [backfillCommitting, setBackfillCommitting] = useState(false);
   const [backfillTraceQuery, setBackfillTraceQuery] = useState('');
   const [backfillResults, setBackfillResults] = useState<Array<{ studentId: string; studentNumber: string; externalNumber: string; status: 'updated' | 'failed'; error?: string }> | null>(null);
-  const [backfillVerifyMisses, setBackfillVerifyMisses] = useState<Array<{ studentId: string; studentNumber: string; expected: string }>>([]);
+  const [backfillVerifyMisses, setBackfillVerifyMisses] = useState<Array<{ studentId: string; studentNumber: string; expected: string; actual: string; docExists: boolean; docSchoolId: string; reason: string }>>([]);
   const [backfillFile, setBackfillFile] = useState<File | null>(null);
   const [backfillAllHeaders, setBackfillAllHeaders] = useState<string[]>([]);
   const [backfillColumnOverride, setBackfillColumnOverride] = useState<string | null>(null);
@@ -478,10 +480,10 @@ export function StudentsTab() {
       const studentDoc = students.find(s => s.id === w.studentId);
       const studentNumber = studentDoc?.studentNumber || '(unknown)';
       try {
-        await updateStudent(w.studentId, { externalStudentNumber: w.externalNumber });
+        await updateStudent(w.studentId, { externalStudentNumber: w.externalNumber }, { skipRefetch: true });
         results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'updated' });
       } catch (e) {
-        const error = e instanceof Error ? e.message : String(e);
+        const error = e instanceof Error ? `${(e as { code?: string }).code ? `[${(e as { code?: string }).code}] ` : ''}${e.message}` : String(e);
         console.error('[backfill] update failed', { studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, error }, e);
         results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'failed', error });
       }
@@ -491,7 +493,50 @@ export function StudentsTab() {
     console.log('[backfill] write results', { ok, fail, results });
     setBackfillResults(results);
 
-    // Re-fetch and verify writes actually persisted
+    // Direct getDoc verification — bypasses the school-filtered roster query
+    // so we can distinguish "write rejected" from "write succeeded but doc not visible".
+    const verifyMisses: Array<{ studentId: string; studentNumber: string; expected: string; actual: string; docExists: boolean; docSchoolId: string; reason: string }> = [];
+    for (const r of results) {
+      if (r.status !== 'updated') continue;
+      try {
+        const snap = await getDoc(doc(db, 'students', r.studentId));
+        if (!snap.exists()) {
+          verifyMisses.push({ studentId: r.studentId, studentNumber: r.studentNumber, expected: r.externalNumber, actual: '', docExists: false, docSchoolId: '', reason: 'doc not found' });
+          continue;
+        }
+        const data = snap.data() as { externalStudentNumber?: string; schoolId?: string };
+        const actual = (data.externalStudentNumber || '').trim();
+        if (actual !== r.externalNumber.trim()) {
+          verifyMisses.push({
+            studentId: r.studentId,
+            studentNumber: r.studentNumber,
+            expected: r.externalNumber,
+            actual,
+            docExists: true,
+            docSchoolId: data.schoolId || '∅',
+            reason: 'value mismatch after write',
+          });
+        }
+      } catch (e) {
+        verifyMisses.push({
+          studentId: r.studentId,
+          studentNumber: r.studentNumber,
+          expected: r.externalNumber,
+          actual: '',
+          docExists: false,
+          docSchoolId: '',
+          reason: e instanceof Error ? `getDoc error: ${e.message}` : 'getDoc error',
+        });
+      }
+    }
+    setBackfillVerifyMisses(verifyMisses);
+    if (verifyMisses.length > 0) {
+      console.warn('[backfill] post-commit verification: writes not confirmed via getDoc', verifyMisses);
+    } else {
+      console.log('[backfill] post-commit verification: all writes confirmed via getDoc');
+    }
+
+    // Single roster refetch at the end (instead of one per update)
     try {
       await refetch();
     } catch (e) {
@@ -503,21 +548,8 @@ export function StudentsTab() {
     if (fail > 0) toast.error(`${fail} update${fail === 1 ? '' : 's'} failed`);
   };
 
-  // Verify writes after refetch — runs reactively when students reload
-  // Compare results against fresh roster
-  const verifyBackfillResults = (results: typeof backfillResults) => {
-    if (!results) return [];
-    const misses: Array<{ studentId: string; studentNumber: string; expected: string }> = [];
-    for (const r of results) {
-      if (r.status !== 'updated') continue;
-      const fresh = students.find(s => s.id === r.studentId);
-      const current = (fresh?.externalStudentNumber || '').trim();
-      if (!current || current !== r.externalNumber.trim()) {
-        misses.push({ studentId: r.studentId, studentNumber: r.studentNumber, expected: r.externalNumber });
-      }
-    }
-    return misses;
-  };
+  // Verification now uses direct getDoc() inside handleConfirmBackfill so it bypasses
+  // the school-filtered roster query. The reactive useEffect below is no longer needed.
 
   const downloadBackfillResultsCsv = () => {
     if (!backfillResults) return;
@@ -539,18 +571,7 @@ export function StudentsTab() {
   const studentsWithBoardId = students.filter(s => s.externalStudentNumber && String(s.externalStudentNumber).trim().length > 0).length;
   const coveragePct = totalStudents > 0 ? Math.round((studentsWithBoardId / totalStudents) * 100) : 0;
 
-  // Re-verify backfill writes whenever roster reloads after a commit
-  useEffect(() => {
-    if (!backfillResults) return;
-    const misses = verifyBackfillResults(backfillResults);
-    setBackfillVerifyMisses(misses);
-    if (misses.length > 0) {
-      console.warn('[backfill] post-commit verification: writes not visible in roster', misses);
-    } else {
-      console.log('[backfill] post-commit verification: all writes confirmed in roster');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, backfillResults]);
+  // (Verification now happens inline in handleConfirmBackfill via direct getDoc.)
 
   // Trace lookup: find a student by studentNumber and report which bucket their row landed in
   const backfillTrace = (() => {
@@ -997,10 +1018,13 @@ export function StudentsTab() {
                   </div>
                   {backfillVerifyMisses.length > 0 && (
                     <div className="rounded border border-destructive/40 bg-destructive/10 p-2 text-[11px] font-mono">
-                      <p className="text-destructive font-semibold mb-1">⚠ {backfillVerifyMisses.length} write(s) reported success but did NOT persist in the roster after refetch — likely Firestore rules rejection.</p>
-                      <div className="max-h-32 overflow-auto">
-                        {backfillVerifyMisses.slice(0, 10).map((m, i) => (
-                          <p key={i}>• {m.studentNumber} (id={m.studentId}) expected="{m.expected}"</p>
+                      <p className="text-destructive font-semibold mb-1">⚠ {backfillVerifyMisses.length} write(s) reported success but did NOT verify via direct getDoc.</p>
+                      <p className="text-muted-foreground mb-2">Your schoolId: <span className="font-semibold">{user?.schoolId || '∅'}</span>. If a doc's schoolId differs, the rule rejected the write or the doc is hidden by your roster query.</p>
+                      <div className="max-h-40 overflow-auto space-y-1">
+                        {backfillVerifyMisses.slice(0, 20).map((m, i) => (
+                          <p key={i}>
+                            • {m.studentNumber} (id={m.studentId}) expected="{m.expected}" actual="{m.actual || '∅'}" docExists={String(m.docExists)} docSchoolId="{m.docSchoolId}" — {m.reason}
+                          </p>
                         ))}
                       </div>
                     </div>
