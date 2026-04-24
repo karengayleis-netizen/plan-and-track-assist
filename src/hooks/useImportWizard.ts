@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { useAuth } from './useAuth';
 import { useStudents } from './useStudents';
 import { parseCSV, detectColumnMapping, buildImportRows, generateErrorReportCSV, buildErrorSummary, validateStudentIdentifierMapping } from '@/lib/csvParser';
@@ -13,6 +14,7 @@ import type {
   ImportResult,
   ImportTemplate,
   InternalField,
+  ImportIdDiagnosis,
 } from '@/types/importWizard';
 import { WizardStep as WS } from '@/types/importWizard';
 
