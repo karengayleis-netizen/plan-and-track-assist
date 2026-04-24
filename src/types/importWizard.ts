@@ -117,3 +117,35 @@ export interface ImportRun {
   importedBy: string;
   createdAt: Date;
 }
+
+// ── Pre-import ID diagnosis (from diagnoseImportStudentIds callable) ─────────
+
+export type IdClassification =
+  | 'visibleMatch'
+  | 'missingEverywhere'
+  | 'hiddenMissingSchoolId'
+  | 'hiddenWrongSchoolId'
+  | 'duplicateExternalNumber';
+
+export interface IdDiagnosis {
+  rawId: string;
+  normalized: string;
+  status: IdClassification;
+  matchedField?: 'externalStudentNumber' | 'studentNumber' | 'stableStudentId';
+  docCount: number;
+  docSchoolIds: string[];
+}
+
+export interface ImportIdDiagnosis {
+  ran: boolean;
+  loading: boolean;
+  error?: string;
+  callerSchoolId?: string;
+  results: IdDiagnosis[];
+  rosterStats?: {
+    totalInSchool: number;
+    withExternalStudentNumber: number;
+    withStudentNumber: number;
+    withStableStudentId: number;
+  };
+}

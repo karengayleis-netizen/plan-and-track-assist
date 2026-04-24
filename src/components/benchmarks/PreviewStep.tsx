@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { ImportRow } from '@/types/importWizard';
-import { ArrowLeft, Loader2, Filter } from 'lucide-react';
+import type { ImportRow, ImportIdDiagnosis, IdClassification } from '@/types/importWizard';
+import { ArrowLeft, Loader2, Filter, Download } from 'lucide-react';
 
 interface PreviewStepProps {
   rows: ImportRow[];
@@ -15,6 +15,7 @@ interface PreviewStepProps {
   classCodeMapped?: boolean;
   students?: Array<{ externalStudentNumber?: string; stableStudentId?: string; studentNumber?: string }>;
   identifierColumnIndex?: number;
+  idDiagnosis?: ImportIdDiagnosis;
 }
 
 const statusColors: Record<string, string> = {
@@ -23,7 +24,7 @@ const statusColors: Record<string, string> = {
   error: 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
-export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading, classCodeMapped, students, identifierColumnIndex }: PreviewStepProps) {
+export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading, classCodeMapped, students, identifierColumnIndex, idDiagnosis }: PreviewStepProps) {
   const [homeroomFilter, setHomeroomFilter] = useState<string>('all');
 
   // Collect unique homerooms from rows
@@ -82,48 +83,158 @@ export function PreviewStep({ rows, onImport, importing, onBack, studentsLoading
         </div>
       )}
 
-      {/* No-match diagnostic banner — only when identifier IS mapped */}
-      {!studentsLoading && matchedCount === 0 && rows.length > 0 && typeof identifierColumnIndex === 'number' && identifierColumnIndex >= 0 && (() => {
+      {/* Pre-import unmatched ID diagnosis — runs whenever any rows are unmatched */}
+      {!studentsLoading && unmatchedCount > 0 && rows.length > 0 && typeof identifierColumnIndex === 'number' && identifierColumnIndex >= 0 && (() => {
         const idCol = identifierColumnIndex;
-        const normalize = (v: unknown): string => {
-          const s = String(v ?? '').trim().replace(/\.0+$/, '');
-          if (!s) return '';
-          if (/^\d+$/.test(s)) return s.replace(/^0+/, '') || '0';
-          return s.toLowerCase();
-        };
         const uniqueUnmatchedIdsRaw = Array.from(
-          new Set(rows.map(r => String(r.rawValues?.[idCol] ?? '').trim()).filter(Boolean))
+          new Set(
+            rows
+              .filter(r => !r.matchedStudentId)
+              .map(r => String(r.rawValues?.[idCol] ?? '').trim())
+              .filter(Boolean)
+          )
         );
-        const uniqueUnmatchedNorm = uniqueUnmatchedIdsRaw.map(normalize);
-        const rosterExt = new Set<string>();
-        const rosterStable = new Set<string>();
-        const rosterNum = new Set<string>();
-        (students ?? []).forEach(s => {
-          const e = normalize(s.externalStudentNumber); if (e) rosterExt.add(e);
-          const st = normalize(s.stableStudentId); if (st) rosterStable.add(st);
-          const n = normalize(s.studentNumber); if (n) rosterNum.add(n);
-        });
-        const presentInRoster = uniqueUnmatchedNorm.filter(id => rosterExt.has(id) || rosterStable.has(id) || rosterNum.has(id)).length;
-        const sampleIds = uniqueUnmatchedIdsRaw.slice(0, 10);
+
+        const d = idDiagnosis;
+        const grouped: Record<IdClassification, typeof d.results> = {
+          visibleMatch: [],
+          missingEverywhere: [],
+          hiddenMissingSchoolId: [],
+          hiddenWrongSchoolId: [],
+          duplicateExternalNumber: [],
+        };
+        (d?.results ?? []).forEach(r => grouped[r.status].push(r));
+
+        const downloadReport = () => {
+          if (!d?.ran || d.results.length === 0) return;
+          const headers = ['CSV Student ID', 'Status', 'Suggested Action', 'Doc Count', 'Doc School IDs'];
+          const actionFor: Record<IdClassification, string> = {
+            visibleMatch: 'Re-run preview — should now match',
+            missingEverywhere: 'Backfill Board Number on Students tab',
+            hiddenMissingSchoolId: 'Repair schoolId on the student doc',
+            hiddenWrongSchoolId: 'Student belongs to another school',
+            duplicateExternalNumber: 'Duplicate board number in roster — deduplicate',
+          };
+          const escape = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+          const lines = d.results.map(r => [
+            escape(r.rawId),
+            r.status,
+            escape(actionFor[r.status]),
+            String(r.docCount),
+            escape(r.docSchoolIds.filter(Boolean).join('|')),
+          ].join(','));
+          const csv = [headers.join(','), ...lines].join('\n');
+          const blob = new Blob([csv], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `unmatched_ids_${new Date().toISOString().split('T')[0]}.csv`;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+
         return (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
-            <p className="font-medium text-destructive mb-1">Student IDs did not match any roster records</p>
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              Reading from mapped column index <strong>{idCol}</strong>. <strong>{rows.length} failed rows</strong> represent <strong>{uniqueUnmatchedIdsRaw.length} unique IDs</strong>. Roster has <strong>{students?.length ?? 0}</strong> students ({rosterExt.size} with externalStudentNumber, {rosterNum.size} with studentNumber, {rosterStable.size} with stableStudentId).
-            </p>
-            <p className="text-muted-foreground text-xs leading-relaxed mt-1">
-              First {sampleIds.length} unmatched IDs from the mapped column: <code className="px-1 bg-muted rounded text-[11px]">{sampleIds.join(', ')}</code>
-            </p>
-            <p className="text-muted-foreground text-xs leading-relaxed mt-1">
-              Of these, <strong className={presentInRoster === 0 ? 'text-destructive' : 'text-warning'}>{presentInRoster}</strong> are present on any student in the roster (after normalization).
-            </p>
-            {presentInRoster === 0 ? (
-              <p className="text-muted-foreground text-xs leading-relaxed mt-2">
-                → These board IDs are not on any roster student. Re-run the <strong>Backfill Board Numbers</strong> tool on the Students tab. Open the browser console for per-row match diagnostics.
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium text-destructive">
+                Unmatched student IDs before import
               </p>
-            ) : (
-              <p className="text-muted-foreground text-xs leading-relaxed mt-2">
-                → IDs exist in the roster but matching still fails. Check the browser console for the per-row match log to see which field was checked.
+              {d?.ran && d.results.length > 0 && (
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={downloadReport}>
+                  <Download className="h-3 w-3 mr-1" /> Report CSV
+                </Button>
+              )}
+            </div>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              <strong>{unmatchedCount}</strong> unmatched rows represent <strong>{uniqueUnmatchedIdsRaw.length}</strong> unique IDs.
+            </p>
+
+            {d?.loading && (
+              <p className="text-muted-foreground text-xs flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin" /> Running cross-school diagnosis…
+              </p>
+            )}
+
+            {d?.error && (
+              <p className="text-xs text-destructive">
+                Diagnosis call failed: {d.error}. Showing local view only.
+              </p>
+            )}
+
+            {d?.ran && !d.loading && !d.error && (
+              <>
+                {grouped.missingEverywhere.length > 0 && (
+                  <div className="rounded-md border border-destructive/30 bg-background/40 p-2">
+                    <p className="text-xs font-medium text-destructive mb-0.5">
+                      Missing board numbers — {grouped.missingEverywhere.length} ID{grouped.missingEverywhere.length === 1 ? '' : 's'}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Not on any student record in any school. Sample:{' '}
+                      <code className="px-1 bg-muted rounded">{grouped.missingEverywhere.slice(0, 5).map(r => r.rawId).join(', ')}</code>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      → Run the <strong>Backfill Board Numbers</strong> tool on the Students tab.
+                    </p>
+                  </div>
+                )}
+
+                {(grouped.hiddenMissingSchoolId.length > 0 || grouped.hiddenWrongSchoolId.length > 0) && (
+                  <div className="rounded-md border border-yellow-500/40 bg-yellow-500/5 p-2">
+                    <p className="text-xs font-medium text-yellow-700 mb-0.5">
+                      Hidden student records — {grouped.hiddenMissingSchoolId.length + grouped.hiddenWrongSchoolId.length} ID{grouped.hiddenMissingSchoolId.length + grouped.hiddenWrongSchoolId.length === 1 ? '' : 's'}
+                    </p>
+                    {grouped.hiddenMissingSchoolId.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {grouped.hiddenMissingSchoolId.length} found on student doc(s) with missing schoolId. Sample:{' '}
+                        <code className="px-1 bg-muted rounded">{grouped.hiddenMissingSchoolId.slice(0, 5).map(r => r.rawId).join(', ')}</code>
+                      </p>
+                    )}
+                    {grouped.hiddenWrongSchoolId.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {grouped.hiddenWrongSchoolId.length} assigned to a different school. Sample:{' '}
+                        <code className="px-1 bg-muted rounded">{grouped.hiddenWrongSchoolId.slice(0, 5).map(r => r.rawId).join(', ')}</code>
+                      </p>
+                    )}
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      → Repair the <strong>schoolId</strong> field on those student docs (Firestore Console or admin tool).
+                    </p>
+                  </div>
+                )}
+
+                {grouped.duplicateExternalNumber.length > 0 && (
+                  <div className="rounded-md border border-yellow-500/40 bg-yellow-500/5 p-2">
+                    <p className="text-xs font-medium text-yellow-700 mb-0.5">
+                      Duplicate board numbers — {grouped.duplicateExternalNumber.length} ID{grouped.duplicateExternalNumber.length === 1 ? '' : 's'}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Same board number on more than one student in your school. Deduplicate before importing.{' '}
+                      Sample: <code className="px-1 bg-muted rounded">{grouped.duplicateExternalNumber.slice(0, 5).map(r => r.rawId).join(', ')}</code>
+                    </p>
+                  </div>
+                )}
+
+                {grouped.visibleMatch.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {grouped.visibleMatch.length} ID{grouped.visibleMatch.length === 1 ? '' : 's'} now appear visible —
+                    go Back and click Preview again to refresh matches.
+                  </p>
+                )}
+
+                {d.rosterStats && (
+                  <p className="text-[11px] text-muted-foreground border-t border-border/50 pt-1">
+                    Visible roster: <strong>{d.rosterStats.totalInSchool}</strong> students ·{' '}
+                    {d.rosterStats.withExternalStudentNumber} with externalStudentNumber ·{' '}
+                    {d.rosterStats.withStudentNumber} with studentNumber ·{' '}
+                    {d.rosterStats.withStableStudentId} with stableStudentId
+                  </p>
+                )}
+              </>
+            )}
+
+            {!d?.ran && !d?.loading && (
+              <p className="text-[11px] text-muted-foreground">
+                Cross-school diagnosis is admin-only. Sample unmatched IDs:{' '}
+                <code className="px-1 bg-muted rounded">{uniqueUnmatchedIdsRaw.slice(0, 8).join(', ')}</code>
               </p>
             )}
           </div>
