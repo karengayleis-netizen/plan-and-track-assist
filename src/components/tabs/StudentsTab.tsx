@@ -480,10 +480,10 @@ export function StudentsTab() {
       const studentDoc = students.find(s => s.id === w.studentId);
       const studentNumber = studentDoc?.studentNumber || '(unknown)';
       try {
-        await updateStudent(w.studentId, { externalStudentNumber: w.externalNumber });
+        await updateStudent(w.studentId, { externalStudentNumber: w.externalNumber }, { skipRefetch: true });
         results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'updated' });
       } catch (e) {
-        const error = e instanceof Error ? e.message : String(e);
+        const error = e instanceof Error ? `${(e as { code?: string }).code ? `[${(e as { code?: string }).code}] ` : ''}${e.message}` : String(e);
         console.error('[backfill] update failed', { studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, error }, e);
         results.push({ studentId: w.studentId, studentNumber, externalNumber: w.externalNumber, status: 'failed', error });
       }
@@ -493,7 +493,50 @@ export function StudentsTab() {
     console.log('[backfill] write results', { ok, fail, results });
     setBackfillResults(results);
 
-    // Re-fetch and verify writes actually persisted
+    // Direct getDoc verification — bypasses the school-filtered roster query
+    // so we can distinguish "write rejected" from "write succeeded but doc not visible".
+    const verifyMisses: Array<{ studentId: string; studentNumber: string; expected: string; actual: string; docExists: boolean; docSchoolId: string; reason: string }> = [];
+    for (const r of results) {
+      if (r.status !== 'updated') continue;
+      try {
+        const snap = await getDoc(doc(db, 'students', r.studentId));
+        if (!snap.exists()) {
+          verifyMisses.push({ studentId: r.studentId, studentNumber: r.studentNumber, expected: r.externalNumber, actual: '', docExists: false, docSchoolId: '', reason: 'doc not found' });
+          continue;
+        }
+        const data = snap.data() as { externalStudentNumber?: string; schoolId?: string };
+        const actual = (data.externalStudentNumber || '').trim();
+        if (actual !== r.externalNumber.trim()) {
+          verifyMisses.push({
+            studentId: r.studentId,
+            studentNumber: r.studentNumber,
+            expected: r.externalNumber,
+            actual,
+            docExists: true,
+            docSchoolId: data.schoolId || '∅',
+            reason: 'value mismatch after write',
+          });
+        }
+      } catch (e) {
+        verifyMisses.push({
+          studentId: r.studentId,
+          studentNumber: r.studentNumber,
+          expected: r.externalNumber,
+          actual: '',
+          docExists: false,
+          docSchoolId: '',
+          reason: e instanceof Error ? `getDoc error: ${e.message}` : 'getDoc error',
+        });
+      }
+    }
+    setBackfillVerifyMisses(verifyMisses);
+    if (verifyMisses.length > 0) {
+      console.warn('[backfill] post-commit verification: writes not confirmed via getDoc', verifyMisses);
+    } else {
+      console.log('[backfill] post-commit verification: all writes confirmed via getDoc');
+    }
+
+    // Single roster refetch at the end (instead of one per update)
     try {
       await refetch();
     } catch (e) {
