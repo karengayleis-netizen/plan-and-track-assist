@@ -29,7 +29,14 @@ export interface WizardState {
   result: ImportResult | null;
   importing: boolean;
   templates: ImportTemplate[];
+  idDiagnosis: ImportIdDiagnosis;
 }
+
+const emptyDiagnosis = (): ImportIdDiagnosis => ({
+  ran: false,
+  loading: false,
+  results: [],
+});
 
 const emptyMapping = (): ColumnMapping => {
   const m: Partial<ColumnMapping> = {};
