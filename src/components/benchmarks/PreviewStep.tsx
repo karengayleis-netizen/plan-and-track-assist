@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { ImportRow } from '@/types/importWizard';
-import { ArrowLeft, Loader2, Filter } from 'lucide-react';
+import type { ImportRow, ImportIdDiagnosis, IdClassification } from '@/types/importWizard';
+import { ArrowLeft, Loader2, Filter, Download } from 'lucide-react';
 
 interface PreviewStepProps {
   rows: ImportRow[];
@@ -15,6 +15,7 @@ interface PreviewStepProps {
   classCodeMapped?: boolean;
   students?: Array<{ externalStudentNumber?: string; stableStudentId?: string; studentNumber?: string }>;
   identifierColumnIndex?: number;
+  idDiagnosis?: ImportIdDiagnosis;
 }
 
 const statusColors: Record<string, string> = {
