@@ -571,18 +571,7 @@ export function StudentsTab() {
   const studentsWithBoardId = students.filter(s => s.externalStudentNumber && String(s.externalStudentNumber).trim().length > 0).length;
   const coveragePct = totalStudents > 0 ? Math.round((studentsWithBoardId / totalStudents) * 100) : 0;
 
-  // Re-verify backfill writes whenever roster reloads after a commit
-  useEffect(() => {
-    if (!backfillResults) return;
-    const misses = verifyBackfillResults(backfillResults);
-    setBackfillVerifyMisses(misses);
-    if (misses.length > 0) {
-      console.warn('[backfill] post-commit verification: writes not visible in roster', misses);
-    } else {
-      console.log('[backfill] post-commit verification: all writes confirmed in roster');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, backfillResults]);
+  // (Verification now happens inline in handleConfirmBackfill via direct getDoc.)
 
   // Trace lookup: find a student by studentNumber and report which bucket their row landed in
   const backfillTrace = (() => {
