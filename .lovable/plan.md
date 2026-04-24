@@ -1,59 +1,155 @@
+## Add a definitive pre-import diagnosis for unmatched Acadience IDs
 
+### What the current code is actually doing
 
-## Diagnose & fix the "4 writes succeeded but didn't persist" backfill issue
+- The import wizard matches the mapped `Student Number` column against the visible roster in this order:
+  1. `externalStudentNumber`
+  2. `studentNumber`
+  3. `stableStudentId`
+- Matching happens in `src/hooks/useImportWizard.ts` after normalizing values (trim, strip trailing `.0`, strip leading zeros for numeric IDs).
+- The roster used for matching comes from `useStudents()`, which only queries students where `schoolId == user.schoolId`.
+- That means two different problems currently look identical in the UI:
+  - the board number was never backfilled onto any student
+  - the student doc exists, but has a missing/wrong `schoolId` so it is invisible to the wizard
+- The current preview banner in `src/components/benchmarks/PreviewStep.tsx` only checks the already-filtered roster, so it cannot distinguish those two cases.
 
-### What we know from the trace
+### Read-only diagnosis plan for this file
 
-- 37 writes attempted, 37 reported "success" at the `updateDoc` level, but 4 specific students (`1AF-7`, `1AF-13`, `1BF-6`, `1BF-16`) come back from the roster refetch still empty.
-- User is **admin** of `folkstone_ps` (confirmed in the JWT — `role:"admin", schoolId:"folkstone_ps"`).
-- Firestore rule for student updates: `allow update: if resourceSameSchool() && requestSameSchool();`
-- `useStudents.updateStudent` only sends `{ externalStudentNumber, updatedAt, lastUpdated }` — no `schoolId`. In Firestore, `request.resource.data` is the **merged** post-update doc, so `schoolId` survives — UNLESS the existing doc has no `schoolId` field at all (legacy import).
+1. **Use the wizard preview as the first filter**
+   - If the file maps `Student Number` correctly and rows still say `No matching student found in roster`, the issue is not the CSV column names.
+   - Look at the preview stats:
+     - if the roster count with `externalStudentNumber` is much lower than the total roster, that points to incomplete board-number backfill
+     - if some rows match and many do not, the problem is likely mixed data quality, not header mapping
 
-### The most likely root cause
+2. **Pick 3-5 unmatched board IDs from the preview/error CSV**
+   - Use actual unmatched values from the file, not coded IDs like `1AF-7`
+   - These are the values the wizard is trying to match to `externalStudentNumber`
 
-These 4 student docs are missing a `schoolId` field on the existing document (legacy data from an earlier import that pre-dates the school-isolation rules). When you call `updateDoc` with only a partial payload:
-- The update **succeeds at the SDK level** because Firestore doesn't pre-validate against rules — wait, that's wrong. Rules DO block it and throw.
+3. **Definitive check in Firebase Console**
+   - Open Firestore → `students`
+   - Search for one unmatched board number in `externalStudentNumber`
+   - Interpret the result like this:
 
-A second, more plausible scenario: the docs DO have `schoolId` but the value is stale/different (e.g. `""` or another school's ID). The query filters them OUT on refetch (`where('schoolId', '==', 'folkstone_ps')`), so the verification step looks for them in `students` array, doesn't find them, and reports them as "did not persist." The write may have actually succeeded — but to a doc the user can no longer see.
+```text
+No document with that externalStudentNumber
+  => missing board-number problem
 
-A third possibility: the doc has a unique-board-id check elsewhere, or the boardId conflicts with another row's, but there's no such rule today.
+Document exists, but schoolId is empty/missing
+  => hidden student problem caused by missing schoolId
 
-### The investigation step (no code yet)
+Document exists, but schoolId != your current schoolId
+  => hidden student problem caused by wrong schoolId
 
-Before changing code, we need to read those 4 specific docs directly from Firestore to see their actual `schoolId` value. Two ways:
+Document exists, schoolId is correct
+  => not a schoolId visibility problem; investigate duplicates/formatting
+```
 
-1. **Quickest** — open Firebase Console → Firestore → `students` collection → look up doc IDs `zczv996viRquAHpxxyvc`, `b7mKc4bGpP5uU0RWFbq0`, `CdlP82WK0Y5PWzODIsbU`, `SejuBADMIeMew6syECrv`. Inspect `schoolId` and `externalStudentNumber` fields.
-2. **In-app** — add a one-off "Inspect doc" debug button (admin only) that does `getDoc()` for an entered ID and prints all fields, bypassing the school filter.
+4. **Why the current UI cannot prove hidden-vs-missing by itself**
+   - `useStudents()` never loads students outside the current `schoolId`
+   - `confirmMapping()` only indexes that filtered array
+   - the preview diagnostic also only inspects that same filtered array
+   - so a hidden student is currently indistinguishable from a missing board number without either:
+     - Firebase Console inspection, or
+     - a privileged server-side diagnostic
 
-### The code fix (after investigation confirms cause)
+### Exact UI/code change to make the wizard show missing IDs before import
 
-**`src/hooks/useStudents.ts` — make `updateStudent` rule-safe and self-healing**
-- Always include `schoolId: user.schoolId` in the update payload. This guarantees `requestSameSchool()` passes even if the existing doc has a wrong/missing schoolId, and the `repairingMissingSchoolId` rule path (already in `firestore.rules`) covers admin self-heal.
-- Remove the `await fetchStudents()` call inside `updateStudent`. The backfill loop runs 37 sequential updates — that's 37 full collection refetches. Let the caller refetch once at the end.
-- Replace the silent `catch {}` with `catch (e)` and re-throw the original error so the backfill loop can show the actual Firestore error code (`permission-denied` vs `not-found`).
+#### 1. Add a callable diagnostic function
+**File:** `functions/src/index.ts`
 
-**`src/components/tabs/StudentsTab.tsx` — improve verification + diagnostics**
-- After the backfill loop, instead of relying on the filtered `students` array for verification, do a direct `getDoc()` per write target to bypass the school filter. This distinguishes "write rejected" from "write succeeded but doc no longer visible to your query."
-- For each verify-miss, show the doc's actual `schoolId` and `externalStudentNumber` from the direct read in the diagnostic panel — so the cause is obvious next time.
-- Add a single "Refetch roster once" call at the end of the loop instead of inside each `updateStudent`.
+Add a new admin-only callable function, e.g. `diagnoseImportStudentIds`.
 
-**`src/lib/backfillParser.ts` — separate concern, same upload**
-- The trace also reports `L.M.C.` in roster `4F` not matched (file row 12 is `3AF-11 / L.M.C.`). The homeroom-stem fallback already exists but file `3AF` stem=`3` ≠ roster `4F` stem=`4`, so it correctly does not auto-match. This stays as an "unmatched, use Resolve picker" row — no code change needed.
+It should:
+- require auth and admin role using the existing server-side admin check pattern
+- derive the caller's `schoolId` from `user_roles/{uid}`
+- accept a list of unmatched CSV student IDs
+- normalize them with the same rules the wizard uses
+- query `students` by `externalStudentNumber` in chunks
+- classify each ID as one of:
+  - `visibleMatch` — doc exists and `schoolId` matches caller school
+  - `missingEverywhere` — no student doc has that board number
+  - `hiddenMissingSchoolId` — doc exists but `schoolId` is empty/missing
+  - `hiddenWrongSchoolId` — doc exists but `schoolId` belongs to a different school
+  - `duplicateExternalNumber` — more than one student has that board number
 
-### Out of scope
+This is the key change that makes the diagnosis reliable, because Admin SDK bypasses the client-side visibility limitation.
 
-- No fuzzy matching on initials.
-- No automatic moving of students between homerooms based on the file (preserving the current "boards write only, homerooms unchanged" behavior).
-- No bulk re-assignment of `schoolId` on legacy docs — the `repairingMissingSchoolId` rule + the always-include-schoolId fix handles new repairs as a side effect of any update.
+#### 2. Store match diagnostics in wizard state
+**Files:**
+- `src/types/importWizard.ts`
+- `src/hooks/useImportWizard.ts`
 
-### Expected outcome
+Add diagnostic types/state such as:
+- unique unmatched raw IDs
+- unique unmatched normalized IDs
+- visible roster stats (`students.length`, count with `externalStudentNumber`)
+- server-side classification results from `diagnoseImportStudentIds`
 
-- Re-run backfill on the same file. Either (a) the 4 writes now persist (if the cause was a missing/stale `schoolId`), or (b) the diagnostic panel shows you the exact `schoolId` value on those 4 docs so we know to fix them in Firestore Console once.
-- Backfill is also significantly faster — one refetch at the end instead of 37.
-- Real Firestore errors propagate to the results CSV instead of being swallowed.
+In `confirmMapping()`:
+- keep the existing row matching logic
+- after matching, collect unique unmatched IDs from the mapped identifier column
+- for admins, call `diagnoseImportStudentIds(uniqueUnmatchedIds)`
+- save the result into wizard state before moving to Preview
+- for teachers, fall back to a local-only diagnostic summary (no hidden-doc classification)
 
-### Files to change
+#### 3. Replace the current all-or-nothing warning banner with a real pre-import diagnosis panel
+**File:** `src/components/benchmarks/PreviewStep.tsx`
 
-- `src/hooks/useStudents.ts` — include schoolId in update, drop per-update refetch, surface real errors.
-- `src/components/tabs/StudentsTab.tsx` — direct `getDoc` verification, end-of-loop refetch, richer diagnostic display.
+Change the preview UI so diagnostics appear whenever there are unmatched IDs, not only when `matchedCount === 0`.
 
+Show a structured panel like this:
+
+```text
+Unmatched student IDs before import
+- 95 unmatched rows
+- 62 unique student IDs
+
+Likely missing board numbers
+- 48 IDs not found on any student record
+- sample: 1046969, 1057155, 1038425
+- next action: run Backfill Board Numbers
+
+Hidden student records
+- 10 IDs found on student docs with missing schoolId
+- 4 IDs found on student docs assigned to another schoolId
+- next action: repair schoolId on those student docs
+
+Visible roster health
+- 312 visible students
+- 141 students currently have externalStudentNumber
+```
+
+Also add a compact detail table:
+- CSV ID
+- status
+- detail/reason
+- next action
+
+#### 4. Make the diagnosis actionable
+**Optional but recommended**
+- Add a “Download unmatched ID report” CSV from Preview
+- Include columns like: `CSV Student ID`, `Status`, `Reason`, `Suggested Action`
+- Keep internal Firestore doc IDs out of the downloadable report
+
+### Expected result after implementation
+
+- Before import, the wizard will tell you exactly which IDs are missing from the roster.
+- It will separate:
+  - `board number not backfilled anywhere`
+  - `student exists but hidden because schoolId is missing/wrong`
+- You will no longer have to guess whether the CSV is wrong or the roster visibility is wrong.
+- The preview becomes the decision point: backfill board numbers, repair `schoolId`, or proceed with the matched rows.
+
+### Technical details
+
+**Files to change**
+- `functions/src/index.ts` — add `diagnoseImportStudentIds` callable
+- `src/types/importWizard.ts` — add diagnostic result types
+- `src/hooks/useImportWizard.ts` — collect unmatched IDs and request server-side diagnosis
+- `src/components/benchmarks/PreviewStep.tsx` — render pre-import missing-ID diagnostics
+
+**Important constraints**
+- Do not rely on the existing `useStudents()` list to detect hidden students; it is filtered by `schoolId`.
+- Use the exact same normalization on both client and server.
+- Keep the import matching logic unchanged; this feature is diagnostic, not a new matching algorithm.
+- Server-side diagnosis must stay admin-only because it inspects records outside the caller’s visible roster scope.
