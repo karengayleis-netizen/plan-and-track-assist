@@ -254,8 +254,39 @@ export function useImportWizard(onComplete?: () => void) {
       };
     });
 
-    setState(s => ({ ...s, importRows: matched, step: WS.PreviewValidate }));
-  }, [state.rawRows, state.columnMapping, students, studentsLoading]);
+    setState(s => ({
+      ...s,
+      importRows: matched,
+      step: WS.PreviewValidate,
+      idDiagnosis: { ran: false, loading: false, results: [] },
+    }));
+
+    // Fire-and-forget admin diagnosis on unmatched IDs (cross-school visibility)
+    const idCol = state.columnMapping.studentIdentifier;
+    const unmatchedIds = Array.from(new Set(
+      matched
+        .filter(r => !r.matchedStudentId)
+        .map(r => String(r.rawValues?.[idCol] ?? '').trim())
+        .filter(Boolean)
+    )).slice(0, 500);
+
+    if (unmatchedIds.length > 0 && user?.role === 'admin') {
+      setState(s => ({ ...s, idDiagnosis: { ran: true, loading: true, results: [] } }));
+      const callable = httpsCallable(functions, 'diagnoseImportStudentIds');
+      callable({ ids: unmatchedIds })
+        .then(res => {
+          const data = res.data as Omit<ImportIdDiagnosis, 'ran' | 'loading'>;
+          setState(s => ({ ...s, idDiagnosis: { ran: true, loading: false, ...data } }));
+        })
+        .catch(err => {
+          console.warn('[ImportWizard] diagnoseImportStudentIds failed:', err);
+          setState(s => ({
+            ...s,
+            idDiagnosis: { ran: true, loading: false, results: [], error: err?.message || 'Diagnosis call failed' },
+          }));
+        });
+    }
+  }, [state.rawRows, state.columnMapping, students, studentsLoading, user]);
 
   // Step 4 → 5 Import
   const runImport = useCallback(async () => {
