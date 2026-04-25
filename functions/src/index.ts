@@ -241,6 +241,284 @@ export const diagnoseImportStudentIds = functions.https.onCall(
   }
 );
 
+// ── Backfill externalStudentNumber (server-side, bypasses rules) ────────────
+// Admin-only. Accepts CSV-derived rows and writes the board number into
+// each matched student's `externalStudentNumber`. Repairs missing schoolId
+// on docs that match by (initials, homeroom) but have no schoolId yet.
+
+interface BackfillInputRow {
+  section?: string;
+  ordinal?: string;
+  initials?: string;
+  homeroom?: string;
+  boardNumber: string;
+  rowIndex?: number;
+}
+
+interface BackfillInput {
+  rows: BackfillInputRow[];
+}
+
+type BackfillAction =
+  | "updated"
+  | "alreadyCorrect"
+  | "noMatch"
+  | "ambiguous"
+  | "errored"
+  | "repairedSchoolIdAndUpdated"
+  | "skippedInvalidInput";
+
+interface BackfillRowResult {
+  rowIndex: number;
+  studentId?: string;
+  studentNumber?: string;
+  initials?: string;
+  homeroom?: string;
+  before?: string;
+  after: string;
+  action: BackfillAction;
+  reason?: string;
+}
+
+interface BackfillResponse {
+  callerSchoolId: string;
+  totals: Record<BackfillAction, number>;
+  results: BackfillRowResult[];
+}
+
+function normalizeBoard(v: unknown): string {
+  const s = String(v ?? "").trim().replace(/\.0+$/, "");
+  if (!s) return "";
+  if (/^\d+$/.test(s)) return s.replace(/^0+/, "") || "0";
+  return s;
+}
+
+function normalizeKey(v: unknown): string {
+  return String(v ?? "").trim().toUpperCase();
+}
+
+export const backfillExternalStudentNumbers = functions.https.onCall(
+  async (data: BackfillInput, context): Promise<BackfillResponse> => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+    }
+    await assertIsAdmin(context.auth.uid);
+
+    const callerRoleDoc = await db.collection("user_roles").doc(context.auth.uid).get();
+    const callerSchoolId = (callerRoleDoc.data()?.schoolId ?? "").toString();
+    if (!callerSchoolId) {
+      throw new functions.https.HttpsError("failed-precondition", "Caller has no schoolId");
+    }
+
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    if (rows.length === 0) {
+      throw new functions.https.HttpsError("invalid-argument", "rows array required");
+    }
+    if (rows.length > 2000) {
+      throw new functions.https.HttpsError("invalid-argument", "Max 2000 rows per call");
+    }
+
+    // Load all students once. Admin SDK bypasses rules.
+    const studentsSnap = await db.collection("students").get();
+
+    // Build lookups:
+    //  - byCodedIdInSchool: studentNumber (e.g. "4F-14") within caller's school
+    //  - byInitialsHomeroomInSchool: "INITIALS|HOMEROOM" within caller's school
+    //  - byInitialsHomeroomNoSchool: same key but only docs where schoolId is empty
+    type DocLite = {
+      id: string;
+      schoolId: string;
+      studentNumber: string;
+      initials: string;
+      homeroom: string;
+      externalStudentNumber: string;
+    };
+    const byCodedIdInSchool = new Map<string, DocLite[]>();
+    const byInitHrInSchool = new Map<string, DocLite[]>();
+    const byInitHrNoSchool = new Map<string, DocLite[]>();
+
+    studentsSnap.forEach((d) => {
+      const x = d.data() as any;
+      const lite: DocLite = {
+        id: d.id,
+        schoolId: (x.schoolId ?? "").toString(),
+        studentNumber: (x.studentNumber ?? "").toString(),
+        initials: (x.initials ?? "").toString(),
+        homeroom: (x.homeroom ?? x.className ?? "").toString(),
+        externalStudentNumber: (x.externalStudentNumber ?? "").toString(),
+      };
+
+      const codedKey = normalizeKey(lite.studentNumber);
+      const ihKey = `${normalizeKey(lite.initials)}|${normalizeKey(lite.homeroom)}`;
+
+      if (lite.schoolId === callerSchoolId) {
+        if (codedKey) {
+          const a = byCodedIdInSchool.get(codedKey) || [];
+          a.push(lite);
+          byCodedIdInSchool.set(codedKey, a);
+        }
+        if (lite.initials && lite.homeroom) {
+          const a = byInitHrInSchool.get(ihKey) || [];
+          a.push(lite);
+          byInitHrInSchool.set(ihKey, a);
+        }
+      } else if (!lite.schoolId) {
+        // Hidden — no schoolId set. Eligible for repair via initials+homeroom.
+        if (lite.initials && lite.homeroom) {
+          const a = byInitHrNoSchool.get(ihKey) || [];
+          a.push(lite);
+          byInitHrNoSchool.set(ihKey, a);
+        }
+      }
+    });
+
+    const totals: Record<BackfillAction, number> = {
+      updated: 0,
+      alreadyCorrect: 0,
+      noMatch: 0,
+      ambiguous: 0,
+      errored: 0,
+      repairedSchoolIdAndUpdated: 0,
+      skippedInvalidInput: 0,
+    };
+    const results: BackfillRowResult[] = [];
+
+    let i = 0;
+    for (const r of rows) {
+      i++;
+      const rowIndex = typeof r.rowIndex === "number" ? r.rowIndex : i;
+      const board = normalizeBoard(r.boardNumber);
+      if (!board) {
+        totals.skippedInvalidInput++;
+        results.push({
+          rowIndex,
+          after: "",
+          action: "skippedInvalidInput",
+          reason: "Missing/invalid boardNumber",
+        });
+        continue;
+      }
+
+      // Try coded ID first: "{section}-{ordinal}"
+      let candidates: DocLite[] = [];
+      let matchSource = "";
+      const section = (r.section ?? "").toString().trim();
+      const ordinal = (r.ordinal ?? "").toString().trim();
+      if (section && ordinal) {
+        const codedKey = normalizeKey(`${section}-${ordinal}`);
+        const hits = byCodedIdInSchool.get(codedKey) || [];
+        if (hits.length > 0) {
+          candidates = hits;
+          matchSource = "codedId";
+        }
+      }
+
+      // Fallback: initials + homeroom in caller's school
+      let repairingSchoolId = false;
+      if (candidates.length === 0 && r.initials && r.homeroom) {
+        const ihKey = `${normalizeKey(r.initials)}|${normalizeKey(r.homeroom)}`;
+        const hits = byInitHrInSchool.get(ihKey) || [];
+        if (hits.length > 0) {
+          candidates = hits;
+          matchSource = "initialsHomeroom";
+        } else {
+          // Last resort: docs with no schoolId (will repair)
+          const orphan = byInitHrNoSchool.get(ihKey) || [];
+          if (orphan.length > 0) {
+            candidates = orphan;
+            matchSource = "initialsHomeroomRepair";
+            repairingSchoolId = true;
+          }
+        }
+      }
+
+      if (candidates.length === 0) {
+        totals.noMatch++;
+        results.push({
+          rowIndex,
+          initials: r.initials,
+          homeroom: r.homeroom,
+          after: board,
+          action: "noMatch",
+          reason: `No student matched by codedId(${section}-${ordinal}) or (initials,homeroom)=(${r.initials},${r.homeroom})`,
+        });
+        continue;
+      }
+      if (candidates.length > 1) {
+        totals.ambiguous++;
+        results.push({
+          rowIndex,
+          initials: r.initials,
+          homeroom: r.homeroom,
+          after: board,
+          action: "ambiguous",
+          reason: `Multiple candidates (${candidates.length}) via ${matchSource}: ${candidates.map(c => c.id).join(", ")}`,
+        });
+        continue;
+      }
+
+      const target = candidates[0];
+      const before = normalizeBoard(target.externalStudentNumber);
+      if (before === board && !repairingSchoolId) {
+        totals.alreadyCorrect++;
+        results.push({
+          rowIndex,
+          studentId: target.id,
+          studentNumber: target.studentNumber,
+          initials: target.initials,
+          homeroom: target.homeroom,
+          before: target.externalStudentNumber,
+          after: board,
+          action: "alreadyCorrect",
+        });
+        continue;
+      }
+
+      try {
+        const update: any = {
+          externalStudentNumber: board,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        if (repairingSchoolId) {
+          update.schoolId = callerSchoolId;
+        }
+        await db.collection("students").doc(target.id).update(update);
+
+        if (repairingSchoolId) {
+          totals.repairedSchoolIdAndUpdated++;
+        } else {
+          totals.updated++;
+        }
+        results.push({
+          rowIndex,
+          studentId: target.id,
+          studentNumber: target.studentNumber,
+          initials: target.initials,
+          homeroom: target.homeroom,
+          before: target.externalStudentNumber,
+          after: board,
+          action: repairingSchoolId ? "repairedSchoolIdAndUpdated" : "updated",
+        });
+      } catch (err: any) {
+        totals.errored++;
+        results.push({
+          rowIndex,
+          studentId: target.id,
+          studentNumber: target.studentNumber,
+          initials: target.initials,
+          homeroom: target.homeroom,
+          before: target.externalStudentNumber,
+          after: board,
+          action: "errored",
+          reason: err?.message || String(err),
+        });
+      }
+    }
+
+    return { callerSchoolId, totals, results };
+  }
+);
+
 export const syncClaimsFromUserRoles = functions.firestore
   .document("user_roles/{uid}")
   .onWrite(async (change, context) => {
