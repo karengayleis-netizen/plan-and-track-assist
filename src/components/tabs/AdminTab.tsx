@@ -1038,24 +1038,85 @@ export function AdminTab() {
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle>Teacher Analytics</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Computed from staff directory · assigned homerooms · Acadience risk
+            </p>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
                   <TableHead>Teacher</TableHead>
+                  <TableHead>Homerooms</TableHead>
                   <TableHead>Class Size</TableHead>
                   <TableHead>Benchmarks</TableHead>
                   <TableHead>Class Risk %</TableHead>
-                  <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No teacher data yet.
-                  </TableCell>
-                </TableRow>
+                {(() => {
+                  const teachers = staffMembers.filter(m => m.role === 'teacher');
+                  if (teachers.length === 0) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          No teachers in the staff directory yet. Add staff above to see analytics.
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  const rows = teachers.map(t => {
+                    const homerooms = t.assignedHomerooms ?? [];
+                    const classStudents = students.filter(
+                      s => s.active !== false && homerooms.includes(s.homeroom)
+                    );
+                    const idSet = new Set(classStudents.map(s => s.id));
+                    const bms = benchmarks.filter(b => idSet.has(b.studentId));
+                    const atRisk = classStudents.filter(s => {
+                      const r = getStudentRiskLevel(s, bms);
+                      return r === 'well-below' || r === 'below';
+                    }).length;
+                    const riskPct = classStudents.length > 0
+                      ? Math.round((atRisk / classStudents.length) * 100)
+                      : 0;
+                    return { t, homerooms, size: classStudents.length, bmCount: bms.length, riskPct };
+                  }).sort((a, b) => b.riskPct - a.riskPct);
+
+                  return rows.map(({ t, homerooms, size, bmCount, riskPct }) => (
+                    <TableRow key={t.uid} className="hover:bg-muted/30">
+                      <TableCell className="font-medium">
+                        <div className="flex flex-col">
+                          <span>{t.displayName || t.email}</span>
+                          {t.displayName && (
+                            <span className="text-xs text-muted-foreground">{t.email}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {homerooms.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {homerooms.map(h => (
+                              <Badge key={h} variant="outline" className="text-xs">{h}</Badge>
+                            ))}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>{size}</TableCell>
+                      <TableCell>{bmCount}</TableCell>
+                      <TableCell>
+                        <span className={
+                          riskPct >= 30 ? 'text-destructive font-medium'
+                          : riskPct >= 15 ? 'text-orange-600 dark:text-orange-400 font-medium'
+                          : 'text-success font-medium'
+                        }>
+                          {size > 0 ? `${riskPct}%` : '—'}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ));
+                })()}
               </TableBody>
             </Table>
           </CardContent>
