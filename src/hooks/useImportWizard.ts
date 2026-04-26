@@ -301,52 +301,52 @@ export function useImportWizard(onComplete?: () => void) {
 
     try {
       for (const row of validRows) {
+        const m = state.columnMapping;
+        const getVal = (field: InternalField) =>
+          m[field] >= 0 ? row.rawValues[m[field]]?.trim() || '' : '';
+
+        const percentStr = getVal('percent');
+        const percentVal = percentStr ? parseFloat(percentStr) : undefined;
+        const classCode = row.csvHomeroom || getVal('classCode') || '';
+        const safeDate = row.parsedDate && !isNaN(row.parsedDate.getTime())
+          ? row.parsedDate
+          : new Date();
+
+        const payload = {
+          schoolId: schoolIdUsed,
+          studentId: row.matchedStudentId,
+          studentNumber: row.matchedStudentNumber || '',
+          initials: row.matchedStudentInitials || '',
+          source: state.source,
+          assessmentFamily: preset.assessmentFamily,
+          assessmentType: row.assessmentType,
+          assessmentName: row.assessmentType,
+          score: row.score,
+          scoreLabel: getVal('status') || undefined,
+          rawScore: getVal('rawScore') || undefined,
+          maxScore: 100,
+          percent: percentVal,
+          percentage: percentVal || 0,
+          benchmarkWindow: getVal('benchmarkWindow') || undefined,
+          strand: getVal('strand') || undefined,
+          classCode: classCode || undefined,
+          subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
+          date: safeDate,
+          term: getVal('benchmarkWindow') || '',
+          notes: getVal('notes') || undefined,
+          ref: getVal('ref') || undefined,
+          reference: getVal('ref') || undefined,
+          importedAt: new Date(),
+          importedBy: user.uid,
+          rawImportMeta: {
+            fileName: state.fileName,
+            columnMapping: columnNameMap,
+          },
+          createdAt: new Date(),
+        };
+
         try {
-          const m = state.columnMapping;
-          const getVal = (field: InternalField) =>
-            m[field] >= 0 ? row.rawValues[m[field]]?.trim() || '' : '';
-
-          const percentStr = getVal('percent');
-          const percentVal = percentStr ? parseFloat(percentStr) : undefined;
-
-          const classCode = row.csvHomeroom || getVal('classCode') || '';
-
-          const safeDate = row.parsedDate && !isNaN(row.parsedDate.getTime())
-            ? row.parsedDate
-            : new Date();
-
-          await addDoc(collection(db, 'benchmarks'), {
-            schoolId: schoolIdUsed,
-            studentId: row.matchedStudentId,
-            studentNumber: row.matchedStudentNumber || '',
-            initials: row.matchedStudentInitials || '',
-            source: state.source,
-            assessmentFamily: preset.assessmentFamily,
-            assessmentType: row.assessmentType,
-            assessmentName: row.assessmentType,
-            score: row.score,
-            scoreLabel: getVal('status') || undefined,
-            rawScore: getVal('rawScore') || undefined,
-            maxScore: 100,
-            percent: percentVal,
-            percentage: percentVal || 0,
-            benchmarkWindow: getVal('benchmarkWindow') || undefined,
-            strand: getVal('strand') || undefined,
-            classCode: classCode || undefined,
-            subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
-            date: safeDate,
-            term: getVal('benchmarkWindow') || '',
-            notes: getVal('notes') || undefined,
-            ref: getVal('ref') || undefined,
-            reference: getVal('ref') || undefined,
-            importedAt: new Date(),
-            importedBy: user.uid,
-            rawImportMeta: {
-              fileName: state.fileName,
-              columnMapping: columnNameMap,
-            },
-            createdAt: new Date(),
-          });
+          await addDoc(collection(db, 'benchmarks'), payload);
           importedCount++;
 
           // Track per-class summary
@@ -366,9 +366,12 @@ export function useImportWizard(onComplete?: () => void) {
             schoolId: schoolIdUsed,
             assessmentType: row.assessmentType,
             score: row.score,
+            payload,
           });
           if (writeErrors.length < 5) {
-            writeErrors.push(`Row ${row.rowIndex + 2} [${code}]: ${msg}`);
+            writeErrors.push(
+              `Row ${row.rowIndex + 2} · student ${row.matchedStudentNumber || '?'} · [${code}] ${msg}`
+            );
           }
         }
       }
