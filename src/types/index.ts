@@ -15,30 +15,52 @@ export type StudentTag = string;
 
 export interface Student {
   id: string;
-  stableStudentId: string;
+  /** Board student number from roster CSV. The single identity key. */
   studentNumber: string;
-  externalStudentNumber?: string;
-  /** Human-readable coded ID like "4F-14", preserved when migrating to board Student Number. */
-  displayCode?: string;
+  /** Student initials, e.g. "J.P.E." */
   initials: string;
-  firstName: string;
-  lastName: string;
-  grade: string;
+  /** Homeroom / section code, e.g. "4F" */
   homeroom: string;
-  seat?: string;
-  yearGroup: string;
-  className: string;
-  sen: boolean;
-  pupilPremium: boolean;
-  eal: boolean;
-  isFocusStudent: boolean;
-  isHighNeed: boolean;
+  /** Grade, e.g. "4" */
+  grade: string;
+  /** School this student belongs to. */
+  schoolId: string;
+  /** Whether this student is on the current active roster. */
+  active: boolean;
+
+  // Optional non-identity attributes (not part of identity, may be absent).
+  isFocusStudent?: boolean;
+  isHighNeed?: boolean;
   gender?: string;
   tags?: string[];
   lastUpdated?: Date;
 
   createdAt: Date;
   updatedAt: Date;
+
+  // ── Deprecated legacy fields (kept optional for read-time tolerance only) ──
+  /** @deprecated removed from new identity model */
+  stableStudentId?: string;
+  /** @deprecated removed from new identity model */
+  externalStudentNumber?: string;
+  /** @deprecated removed from new identity model */
+  displayCode?: string;
+  /** @deprecated removed from new identity model */
+  firstName?: string;
+  /** @deprecated removed from new identity model */
+  lastName?: string;
+  /** @deprecated removed from new identity model */
+  seat?: string;
+  /** @deprecated removed from new identity model */
+  yearGroup?: string;
+  /** @deprecated removed from new identity model */
+  className?: string;
+  /** @deprecated removed from new identity model */
+  sen?: boolean;
+  /** @deprecated removed from new identity model */
+  pupilPremium?: boolean;
+  /** @deprecated removed from new identity model */
+  eal?: boolean;
 }
 
 export interface Class {
