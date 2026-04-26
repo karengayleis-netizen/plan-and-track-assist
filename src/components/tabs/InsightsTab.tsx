@@ -5,6 +5,7 @@ import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, LineChart, Line, Area, AreaChart, PieChart, Pie, Cell, Legend, ReferenceLine } from 'recharts';
 import { Users, AlertTriangle, Target, CheckCircle, TrendingUp } from 'lucide-react';
 import { StatCard, InsightChart, chartColors, tooltipStyle, SectionHeader } from '@/components/dashboard';
+import { formatStudentDisplay } from '@/lib/studentDisplay';
 
 const trendLineColors = [
   chartColors.primary,
@@ -362,7 +363,7 @@ export function InsightsTab() {
               <SelectContent>
                 {students.map(student => (
                   <SelectItem key={student.id} value={student.id}>
-                    {student.studentNumber} - {student.initials}
+                    {formatStudentDisplay(student)}
                   </SelectItem>
                 ))}
               </SelectContent>
