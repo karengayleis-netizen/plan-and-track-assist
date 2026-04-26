@@ -24,6 +24,7 @@ import { TagInput } from '@/components/ui/tag-input';
 import { Badge } from '@/components/ui/badge';
 import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow, type DetectedColumns } from '@/lib/backfillParser';
 import { ServerBackfillPanel } from '@/components/students/ServerBackfillPanel';
+import { ForceSetBoardNumbersPanel } from '@/components/students/ForceSetBoardNumbersPanel';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -833,6 +834,11 @@ export function StudentsTab() {
       {/* Server-side backfill (Admin SDK, bypasses rules) */}
       {isAdmin && (
         <ServerBackfillPanel onAfterRun={() => refetch()} />
+      )}
+
+      {/* Force-set board numbers by doc ID (manual override for matcher mistakes) */}
+      {isAdmin && (
+        <ForceSetBoardNumbersPanel onAfterRun={() => refetch()} />
       )}
 
       {/* Whole-school Board Number Backfill */}
