@@ -248,12 +248,46 @@ export function useImportWizard(onComplete?: () => void) {
       return;
     }
 
+    // Hard guard: must have a non-empty schoolId before writing 971 docs that
+    // would all be rejected by Firestore rules with PERMISSION_DENIED.
+    const schoolIdUsed = (user.schoolId || '').trim();
+    if (!schoolIdUsed) {
+      console.error('[ImportWizard] runImport aborted — user.schoolId is empty', { user });
+      const blockedResult: ImportResult = {
+        totalRows: state.importRows.length,
+        importedRows: 0,
+        skippedRows: 0,
+        unmatchedRows: state.importRows.filter(r => !r.matchedStudentId && r.status !== 'error').length,
+        errorRows: 0,
+        failedToSaveRows: 0,
+        writeErrors: ['Aborted before writing: your account is not assigned to a school (schoolId is empty). Reload the page and try again, or contact support.'],
+        attemptedRows: 0,
+        accountedFor: 0,
+        unaccountedFor: state.importRows.length,
+        schoolIdUsed: '',
+        loopAborted: true,
+        loopAbortReason: 'empty-schoolId',
+      };
+      setState(s => ({ ...s, result: blockedResult, importing: false, step: WS.ImportResults }));
+      return;
+    }
+
     setState(s => ({ ...s, importing: true }));
 
     const preset = getPreset(state.source);
     const validRows = state.importRows.filter(r => r.status !== 'error' && r.matchedStudentId);
+    const attemptedCount = validRows.length;
     let importedCount = 0;
     let errorCount = 0;
+    let loopAborted = false;
+    let loopAbortReason = '';
+    let lastErrorCode = '';
+
+    console.log('[ImportWizard] runImport starting', {
+      totalRows: state.importRows.length,
+      validRows: attemptedCount,
+      schoolId: schoolIdUsed,
+    });
 
     const columnNameMap: Record<string, string> = {};
     for (const [field, idx] of Object.entries(state.columnMapping)) {
@@ -265,90 +299,126 @@ export function useImportWizard(onComplete?: () => void) {
     const classSummary: Record<string, number> = {};
     const writeErrors: string[] = [];
 
-    for (const row of validRows) {
-      try {
-        const m = state.columnMapping;
-        const getVal = (field: InternalField) =>
-          m[field] >= 0 ? row.rawValues[m[field]]?.trim() || '' : '';
+    try {
+      for (const row of validRows) {
+        try {
+          const m = state.columnMapping;
+          const getVal = (field: InternalField) =>
+            m[field] >= 0 ? row.rawValues[m[field]]?.trim() || '' : '';
 
-        const percentStr = getVal('percent');
-        const percentVal = percentStr ? parseFloat(percentStr) : undefined;
+          const percentStr = getVal('percent');
+          const percentVal = percentStr ? parseFloat(percentStr) : undefined;
 
-        const classCode = row.csvHomeroom || getVal('classCode') || '';
+          const classCode = row.csvHomeroom || getVal('classCode') || '';
 
-        const safeDate = row.parsedDate && !isNaN(row.parsedDate.getTime())
-          ? row.parsedDate
-          : new Date();
+          const safeDate = row.parsedDate && !isNaN(row.parsedDate.getTime())
+            ? row.parsedDate
+            : new Date();
 
-        await addDoc(collection(db, 'benchmarks'), {
-          schoolId: user.schoolId || '',
-          studentId: row.matchedStudentId,
-          studentNumber: row.matchedStudentNumber || '',
-          initials: row.matchedStudentInitials || '',
-          source: state.source,
-          assessmentFamily: preset.assessmentFamily,
-          assessmentType: row.assessmentType,
-          assessmentName: row.assessmentType,
-          score: row.score,
-          scoreLabel: getVal('status') || undefined,
-          rawScore: getVal('rawScore') || undefined,
-          maxScore: 100,
-          percent: percentVal,
-          percentage: percentVal || 0,
-          benchmarkWindow: getVal('benchmarkWindow') || undefined,
-          strand: getVal('strand') || undefined,
-          classCode: classCode || undefined,
-          subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
-          date: safeDate,
-          term: getVal('benchmarkWindow') || '',
-          notes: getVal('notes') || undefined,
-          ref: getVal('ref') || undefined,
-          reference: getVal('ref') || undefined,
-          importedAt: new Date(),
-          importedBy: user.uid,
-          rawImportMeta: {
-            fileName: state.fileName,
-            columnMapping: columnNameMap,
-          },
-          createdAt: new Date(),
-        });
-        importedCount++;
+          await addDoc(collection(db, 'benchmarks'), {
+            schoolId: schoolIdUsed,
+            studentId: row.matchedStudentId,
+            studentNumber: row.matchedStudentNumber || '',
+            initials: row.matchedStudentInitials || '',
+            source: state.source,
+            assessmentFamily: preset.assessmentFamily,
+            assessmentType: row.assessmentType,
+            assessmentName: row.assessmentType,
+            score: row.score,
+            scoreLabel: getVal('status') || undefined,
+            rawScore: getVal('rawScore') || undefined,
+            maxScore: 100,
+            percent: percentVal,
+            percentage: percentVal || 0,
+            benchmarkWindow: getVal('benchmarkWindow') || undefined,
+            strand: getVal('strand') || undefined,
+            classCode: classCode || undefined,
+            subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
+            date: safeDate,
+            term: getVal('benchmarkWindow') || '',
+            notes: getVal('notes') || undefined,
+            ref: getVal('ref') || undefined,
+            reference: getVal('ref') || undefined,
+            importedAt: new Date(),
+            importedBy: user.uid,
+            rawImportMeta: {
+              fileName: state.fileName,
+              columnMapping: columnNameMap,
+            },
+            createdAt: new Date(),
+          });
+          importedCount++;
 
-        // Track per-class summary
-        const summaryKey = row.matchedHomeroom || classCode || 'Unknown';
-        classSummary[summaryKey] = (classSummary[summaryKey] || 0) + 1;
-      } catch (err) {
-        errorCount++;
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[ImportWizard] addDoc failed for row', row.rowIndex, {
-          error: msg,
-          studentId: row.matchedStudentId,
-          studentNumber: row.matchedStudentNumber,
-          schoolId: user.schoolId,
-          assessmentType: row.assessmentType,
-          score: row.score,
-        });
-        if (writeErrors.length < 5) {
-          writeErrors.push(`Row ${row.rowIndex + 2}: ${msg}`);
+          // Track per-class summary
+          const summaryKey = row.matchedHomeroom || classCode || 'Unknown';
+          classSummary[summaryKey] = (classSummary[summaryKey] || 0) + 1;
+        } catch (err) {
+          errorCount++;
+          const e = err as { code?: string; message?: string };
+          const code = e?.code || 'unknown';
+          const msg = e?.message || String(err);
+          lastErrorCode = code;
+          console.error('[ImportWizard] addDoc failed for row', row.rowIndex, {
+            code,
+            message: msg,
+            studentId: row.matchedStudentId,
+            studentNumber: row.matchedStudentNumber,
+            schoolId: schoolIdUsed,
+            assessmentType: row.assessmentType,
+            score: row.score,
+          });
+          if (writeErrors.length < 5) {
+            writeErrors.push(`Row ${row.rowIndex + 2} [${code}]: ${msg}`);
+          }
         }
       }
+    } catch (loopErr) {
+      loopAborted = true;
+      const e = loopErr as { code?: string; message?: string };
+      loopAbortReason = `${e?.code || 'unknown'}: ${e?.message || String(loopErr)}`;
+      console.error('[ImportWizard] Loop aborted unexpectedly:', loopErr);
+      writeErrors.push(`Loop aborted: ${loopAbortReason}`);
     }
 
     const unmatchedCount = state.importRows.filter(r => !r.matchedStudentId && r.status !== 'error').length;
+    const skippedCount = state.importRows.length - attemptedCount - unmatchedCount;
+    const accountedFor = importedCount + errorCount + skippedCount + unmatchedCount;
+    const unaccountedFor = state.importRows.length - accountedFor;
+
+    if (unaccountedFor !== 0) {
+      console.error('[ImportWizard] COUNT MISMATCH', {
+        total: state.importRows.length,
+        attempted: attemptedCount,
+        imported: importedCount,
+        errors: errorCount,
+        skipped: skippedCount,
+        unmatched: unmatchedCount,
+        accountedFor,
+        unaccountedFor,
+      });
+    }
+
     const result: ImportResult = {
       totalRows: state.importRows.length,
       importedRows: importedCount,
-      skippedRows: state.importRows.length - validRows.length,
+      skippedRows: skippedCount,
       unmatchedRows: unmatchedCount,
       errorRows: errorCount,
       failedToSaveRows: errorCount,
       writeErrors,
       classSummary: Object.keys(classSummary).length > 0 ? classSummary : undefined,
+      attemptedRows: attemptedCount,
+      accountedFor,
+      unaccountedFor,
+      lastErrorCode: lastErrorCode || undefined,
+      schoolIdUsed,
+      loopAborted,
+      loopAbortReason: loopAbortReason || undefined,
     };
 
     try {
       await addDoc(collection(db, 'benchmark_import_runs'), {
-        schoolId: user.schoolId || '',
+        schoolId: schoolIdUsed,
         source: state.source,
         fileName: state.fileName,
         totalRows: result.totalRows,
@@ -365,6 +435,43 @@ export function useImportWizard(onComplete?: () => void) {
     setState(s => ({ ...s, result, importing: false, step: WS.ImportResults }));
     onComplete?.();
   }, [user, state.source, state.importRows, state.columnMapping, state.headers, state.fileName, state.rawRows, onComplete]);
+
+  // Probe: try to write exactly ONE benchmark doc to surface the raw Firestore error.
+  // Used from the Results screen when 0 imported and 0 failed-to-save (the impossible case).
+  const probeWrite = useCallback(async (): Promise<{ ok: boolean; code?: string; message?: string }> => {
+    if (!user || !state.source) return { ok: false, message: 'No user/source' };
+    const schoolIdUsed = (user.schoolId || '').trim();
+    if (!schoolIdUsed) return { ok: false, code: 'empty-schoolId', message: 'user.schoolId is empty' };
+    const firstMatched = state.importRows.find(r => r.matchedStudentId && r.status !== 'error');
+    if (!firstMatched) return { ok: false, message: 'No matched row available to probe' };
+
+    const preset = getPreset(state.source);
+    try {
+      await addDoc(collection(db, 'benchmarks'), {
+        schoolId: schoolIdUsed,
+        studentId: firstMatched.matchedStudentId,
+        studentNumber: firstMatched.matchedStudentNumber || '',
+        initials: firstMatched.matchedStudentInitials || '',
+        source: state.source,
+        assessmentFamily: preset.assessmentFamily,
+        assessmentType: firstMatched.assessmentType || 'PROBE',
+        assessmentName: firstMatched.assessmentType || 'PROBE',
+        score: firstMatched.score || '0',
+        date: firstMatched.parsedDate && !isNaN(firstMatched.parsedDate.getTime()) ? firstMatched.parsedDate : new Date(),
+        importedAt: new Date(),
+        importedBy: user.uid,
+        createdAt: new Date(),
+        probe: true,
+      });
+      console.log('[ImportWizard] probeWrite SUCCEEDED');
+      return { ok: true };
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      console.error('[ImportWizard] probeWrite FAILED', { code: e?.code, message: e?.message, raw: err });
+      return { ok: false, code: e?.code, message: e?.message || String(err) };
+    }
+  }, [user, state.source, state.importRows]);
+
 
   // Step 6: Templates
   const loadTemplates = useCallback(async () => {
