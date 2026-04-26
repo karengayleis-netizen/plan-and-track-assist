@@ -836,6 +836,11 @@ export function StudentsTab() {
         <ServerBackfillPanel onAfterRun={() => refetch()} />
       )}
 
+      {/* Force-set board numbers by doc ID (manual override for matcher mistakes) */}
+      {isAdmin && (
+        <ForceSetBoardNumbersPanel onAfterRun={() => refetch()} />
+      )}
+
       {/* Whole-school Board Number Backfill */}
       {isAdmin && (
         <Card className="border-border/50 shadow-sm">
