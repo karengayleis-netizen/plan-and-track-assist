@@ -405,7 +405,7 @@ export function InsightsTab() {
             {!effectiveMeasure
               ? 'No benchmark data in current filter. Import benchmarks or clear filters.'
               : classGrowthData.length === 1
-                ? `Only one assessment window for ${effectiveMeasure} so far — need a second window (e.g. MOY) to plot a trend.`
+                ? `Baseline data available for ${effectiveMeasure} (${classGrowthData[0].count} students). Growth trend will appear after another window is imported.`
                 : `No data for ${effectiveMeasure} in current filter.`}
           </div>
         )}
