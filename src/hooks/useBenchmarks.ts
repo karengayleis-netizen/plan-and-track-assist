@@ -68,14 +68,25 @@ export function useBenchmarks(studentId?: string) {
       throw new Error(errorMsg);
     }
 
+    if (!user?.schoolId) {
+      const msg = 'Cannot save benchmark: your account is not assigned to a school. Reload and try again.';
+      setError(msg);
+      throw new Error(msg);
+    }
+
     try {
       const now = new Date();
-      const docRef = await addDoc(collection(db, 'benchmarks'), {
+      const rawDoc: Record<string, unknown> = {
         ...validation.data,
-        schoolId: user?.schoolId,
+        schoolId: user.schoolId,
         createdAt: now,
         lastUpdated: now,
-      });
+      };
+      // Firestore rejects undefined — strip any undefined keys (Zod .optional() leaves them as undefined).
+      const cleanDoc = Object.fromEntries(
+        Object.entries(rawDoc).filter(([, v]) => v !== undefined)
+      );
+      const docRef = await addDoc(collection(db, 'benchmarks'), cleanDoc);
       await fetchBenchmarks();
       return docRef.id;
     } catch {
