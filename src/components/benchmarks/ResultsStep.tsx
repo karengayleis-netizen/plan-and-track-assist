@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ImportResult, ImportRow } from '@/types/importWizard';
 import type { ErrorSummary } from '@/lib/csvParser';
-import { CheckCircle2, AlertTriangle, Download, Save, FileWarning, XCircle, School } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Download, Save, FileWarning, XCircle, School, Loader2, FlaskConical } from 'lucide-react';
 
 interface ResultsStepProps {
   result: ImportResult;
@@ -11,12 +12,34 @@ interface ResultsStepProps {
   errorSummary: ErrorSummary;
   onDownloadErrors: () => void;
   onSaveTemplate: () => void;
+  onProbeWrite?: () => Promise<{ ok: boolean; code?: string; message?: string }>;
   onClose: () => void;
 }
 
-export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSaveTemplate, onClose }: ResultsStepProps) {
+export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSaveTemplate, onProbeWrite, onClose }: ResultsStepProps) {
   const failedToSave = result.failedToSaveRows ?? result.errorRows ?? 0;
   const hasErrors = result.skippedRows > 0 || result.unmatchedRows > 0 || failedToSave > 0;
+
+  // Diagnostics: rows that vanished (not imported, not skipped, not unmatched, not failed)
+  const accountedFor = result.accountedFor ?? (result.importedRows + result.skippedRows + result.unmatchedRows + failedToSave);
+  const unaccountedFor = result.unaccountedFor ?? (result.totalRows - accountedFor);
+  const showDiagnostics = unaccountedFor !== 0 || result.loopAborted || (result.importedRows === 0 && result.attemptedRows && result.attemptedRows > 0);
+
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<{ ok: boolean; code?: string; message?: string } | null>(null);
+
+  const runProbe = async () => {
+    if (!onProbeWrite) return;
+    setProbing(true);
+    setProbeResult(null);
+    try {
+      const r = await onProbeWrite();
+      setProbeResult(r);
+    } finally {
+      setProbing(false);
+    }
+  };
+
 
   return (
     <div className="space-y-5">
