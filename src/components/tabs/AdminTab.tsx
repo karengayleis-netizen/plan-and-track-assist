@@ -846,6 +846,52 @@ export function AdminTab() {
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
+            {/* ── Whole-School Filter Bar (defaults to All) ── */}
+            <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-border/60 bg-muted/30">
+              <span className="text-sm font-medium text-muted-foreground mr-1">View:</span>
+              <Select value={adminGradeFilter} onValueChange={setAdminGradeFilter}>
+                <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Grades</SelectItem>
+                  {GRADES.map(g => (
+                    <SelectItem key={g} value={g}>{g === 'K' ? 'Kindergarten' : `Grade ${g}`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={adminHomeroomFilter} onValueChange={setAdminHomeroomFilter}>
+                <SelectTrigger className="w-[160px] h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Homerooms</SelectItem>
+                  {availableHomerooms.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={adminMeasureFilter} onValueChange={setAdminMeasureFilter}>
+                <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Measures</SelectItem>
+                  {availableMeasures.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={adminWindowFilter} onValueChange={setAdminWindowFilter}>
+                <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Windows</SelectItem>
+                  {availableWindows.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {isFiltered && (
+                <button
+                  onClick={() => { setAdminGradeFilter('all'); setAdminHomeroomFilter('all'); setAdminMeasureFilter('all'); setAdminWindowFilter('all'); }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Reset to whole school
+                </button>
+              )}
+              <div className="ml-auto text-xs text-muted-foreground">
+                {isFiltered ? 'Filtered view' : 'Whole school'}
+              </div>
+            </div>
+
             <h3 className="font-semibold text-foreground">All Grades</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard
@@ -881,7 +927,7 @@ export function AdminTab() {
               <h4 className="font-medium mb-3 text-foreground">Acadience Risk Distribution by Grade</h4>
               {riskByGrade.length === 0 ? (
                 <div className="h-20 flex items-center justify-center text-muted-foreground text-sm">
-                  No Acadience scoreLabels found yet — import benchmarks with a Status column to populate this chart.
+                  No Acadience scoreLabels found in current view — import benchmarks with a Status column or reset filters.
                 </div>
               ) : (
                 <div className="h-64">
@@ -894,12 +940,39 @@ export function AdminTab() {
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <Bar dataKey="well-below" stackId="a" fill={RISK_COLOR['well-below']} name={RISK_LABEL['well-below']} />
                       <Bar dataKey="below" stackId="a" fill={RISK_COLOR['below']} name={RISK_LABEL['below']} />
+                      <Bar dataKey="approaching" stackId="a" fill={RISK_COLOR['approaching']} name={RISK_LABEL['approaching']} />
                       <Bar dataKey="at-or-above" stackId="a" fill={RISK_COLOR['at-or-above']} name={RISK_LABEL['at-or-above']} />
                       <Bar dataKey="well-above" stackId="a" fill={RISK_COLOR['well-above']} name={RISK_LABEL['well-above']} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
+            </div>
+
+            {/* ── Diagnostic Card (temporary) ── */}
+            <div className="border border-dashed border-amber-400/60 rounded-lg p-4 bg-amber-50/40 dark:bg-amber-950/20 text-xs">
+              <div className="font-medium text-amber-800 dark:text-amber-300 mb-2">🔍 Diagnostic (temporary)</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 font-mono">
+                <div>Total benchmark docs loaded: <strong>{benchmarks.length}</strong></div>
+                <div>Unique students with benchmarks (all): <strong>{uniqueAssessedAll}</strong></div>
+                <div>Reading: <strong>{isFiltered ? 'FILTERED' : 'WHOLE SCHOOL'}</strong></div>
+                <div>In current view — benchmarks: <strong>{filteredBenchmarks.length}</strong></div>
+                <div>In current view — assessed students: <strong>{assessedCount}</strong></div>
+                <div>Filters: g=<strong>{adminGradeFilter}</strong> hr=<strong>{adminHomeroomFilter}</strong> m=<strong>{adminMeasureFilter}</strong> w=<strong>{adminWindowFilter}</strong></div>
+              </div>
+              <details className="mt-2">
+                <summary className="cursor-pointer text-amber-800 dark:text-amber-300">First 5 benchmark records</summary>
+                <pre className="mt-2 p-2 bg-background/80 rounded overflow-x-auto text-[10px] leading-tight">
+{JSON.stringify(benchmarks.slice(0, 5).map(b => ({
+  studentId: b.studentId,
+  measure: b.assessmentType || b.assessmentName,
+  score: b.score,
+  scoreLabel: b.scoreLabel,
+  window: b.benchmarkWindow || b.term,
+  date: b.date instanceof Date ? b.date.toISOString().slice(0,10) : String(b.date),
+})), null, 2)}
+                </pre>
+              </details>
             </div>
 
             {/* Areas of Need */}
