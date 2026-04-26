@@ -66,6 +66,8 @@ export interface ImportResult {
   skippedRows: number;
   unmatchedRows: number;
   errorRows: number;
+  failedToSaveRows: number;
+  writeErrors: string[];
   classSummary?: Record<string, number>;
 }
 

@@ -1,76 +1,55 @@
-## What this means
-`replaceSchoolRoster` exists in the current source code, but Firebase is not seeing it in the codebase you are deploying from.
+# Diagnose & fix the "0 imported / 971 silent failures" bug
 
-## Evidence from the codebase
-- `functions/src/index.ts` does export `replaceSchoolRoster`.
-- In the current project, `functions/package.json` is set to:
-  - `"main": "lib/index.js"`
-  - `"engines": { "node": "22" }`
-  - `firebase-functions: ^5.1.0`
+## What the numbers actually say
 
-Your deploy output says:
-- Runtime is Node.js 20
-- `firebase-functions` is outdated
+Your results screen shows:
+- **Total Rows: 980**
+- **Imported: 0**
+- **Skipped: 9**  ← these are the 9 unmatched rows for student `1093503`
+- **Unmatched: 9**
 
-That mismatch strongly suggests the folder you are deploying locally is not the same code state as the one that contains `replaceSchoolRoster`.
+That leaves **971 rows** that *did* match a student in your roster, *did* pass validation, *were* sent to Firestore — and every single one **failed silently**. The Results screen never tells you about them, because the import code currently swallows write errors and the UI doesn't display the error count.
 
-## Plan
-1. Verify the local source file really contains the export:
-   - Open `functions/src/index.ts`
-   - Confirm it contains `export const replaceSchoolRoster = functions.https.onCall(`
+So this is **not** a roster-matching problem (matching worked for 971/980). Something is rejecting the writes to the `benchmarks` collection.
 
-2. Verify the local package matches the current project state:
-   - Open `functions/package.json`
-   - Confirm it shows Node `22` and `firebase-functions` `^5.1.0`
-   - If it still shows Node 20 or older dependencies, your local repo is behind/out of sync
+## Root cause to confirm
 
-3. Verify the compiled output after build:
-   - Run the build in `functions`
-   - Open `functions/lib/index.js`
-   - Confirm `replaceSchoolRoster` appears there
-   - If it does not, the local TypeScript source being compiled is not the updated file
+In `src/hooks/useImportWizard.ts` (`runImport`), every `addDoc(collection(db, 'benchmarks'), …)` is wrapped in `try { … } catch { errorCount++ }` — the actual error is thrown away. And `errorCount` is computed but never shown in `ResultsStep.tsx`.
 
-4. Deploy only after those three files line up:
-   - `functions/src/index.ts` contains the export
-   - `functions/lib/index.js` contains the compiled export
-   - `functions/package.json` matches the updated config
+Most likely culprits (in order):
+1. A field value the Firestore SDK rejects (e.g., `Date` from an invalid `parsedDate`, or a value that becomes `NaN`).
+2. A security rule edge case on `/benchmarks` create — unlikely given the rule only checks `schoolId`, but worth proving.
+3. A required field the new schema expects that isn't being set.
 
-5. If the export is present but filtered deploy still fails:
-   - Deploy all functions once with `firebase deploy --only functions`
-   - Check whether Firebase lists `replaceSchoolRoster` among detected functions
-   - If not, the local CLI is still analyzing stale code
+We can't tell which until we stop swallowing the error.
 
-## Most likely fix
-Bring your local `functions` folder fully in sync with the updated project files, then rebuild and redeploy.
+## Fix — 3 small changes
 
-## Technical detail
-Firebase deploy discovers functions from the compiled entrypoint defined by:
+### 1. Stop swallowing the real error
+In `runImport`, log each failure with the row index, the document payload, and the error message. Capture the **first 5 errors** into a new `writeErrors: string[]` field on the result so we can show them on the Results screen.
 
-```text
-functions/package.json -> main: lib/index.js
-```
+### 2. Show write failures in the Results UI
+Update `ImportResult` and `ResultsStep.tsx` so when `errorRows > 0` we display:
+- A red banner: *"N rows matched a student but failed to save"*
+- The first few error messages verbatim (e.g. `"Missing or insufficient permissions"`, `"Invalid Date"`, etc.)
+- Include these rows in the downloadable error CSV (currently the CSV only includes unmatched/validation errors, not write failures).
 
-So for filtered deploys to work, all of this must be true:
+### 3. Make the totals add up
+Right now: Imported(0) + Skipped(9) + Unmatched(9) ≠ Total(980). Add a fourth tile **Failed to Save: 971** and rename the existing tiles so a teacher can see at a glance where every row went.
 
-```text
-functions/src/index.ts
-  exports replaceSchoolRoster
-        ↓ build
-functions/lib/index.js
-  exports replaceSchoolRoster
-        ↓ deploy analysis
-Firebase CLI detects default:replaceSchoolRoster
-```
+## About the Students / Insights filters
 
-If any one of those three is missing or stale, you get:
+The filters are already there on the Students tab (search box, *All homerooms* dropdown, *All Tags* dropdown — `StudentsTab.tsx` lines 308–342). They're rendered inside the roster card header, top-right, and only appear once classes have loaded. If you're not seeing them, it's almost certainly a viewport/wrapping issue on the 889px-wide preview — they wrap to a second row below the title. After the next deploy, please confirm whether they're visible on a wider screen; if not, I'll move them into a dedicated filter row above the table so they're always obvious.
 
-```text
-Error: No function matches the filter: default:replaceSchoolRoster
-```
+The Insights tab uses the same `useStudents` + `useBenchmarks` hooks — once the benchmark writes succeed, its charts and per-class breakdowns will populate automatically. There's nothing to fix there until the import works.
 
-## What to send me next
-Please paste the contents of these two local files:
-- `functions/package.json`
-- the part of `functions/src/index.ts` that includes `replaceSchoolRoster`
+## Files to change
 
-That will confirm exactly where the mismatch is.
+- `src/hooks/useImportWizard.ts` — log + capture write errors, return them in the result
+- `src/types/importWizard.ts` — add `writeErrors: string[]` and `failedToSaveRows: number` to `ImportResult`
+- `src/components/benchmarks/ResultsStep.tsx` — add the *Failed to Save* tile and the error banner
+- `src/lib/csvParser.ts` — extend `generateErrorReportCSV` to include write-failure rows
+
+## Next step after deploy
+
+Re-run the same Acadience import. The Results screen will now show the actual Firestore error message for the 971 failed rows. Paste that message back to me and I'll fix the underlying cause in one shot — it'll be either a schema/field issue (5-line fix) or a rules tweak (also small).
