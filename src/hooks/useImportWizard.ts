@@ -469,7 +469,7 @@ export function useImportWizard(onComplete?: () => void) {
       ? firstMatched.parsedDate
       : new Date();
 
-    const payload = {
+    const rawProbe: Record<string, unknown> = {
       schoolId: schoolIdUsed,
       studentId: firstMatched.matchedStudentId,
       studentNumber: firstMatched.matchedStudentNumber || '',
@@ -479,15 +479,18 @@ export function useImportWizard(onComplete?: () => void) {
       assessmentType: firstMatched.assessmentType || 'PROBE',
       assessmentName: firstMatched.assessmentType || 'PROBE',
       score: firstMatched.score || '0',
-      scoreLabel: getVal('status') || undefined,
-      benchmarkWindow: getVal('benchmarkWindow') || undefined,
-      classCode: classCode || undefined,
+      scoreLabel: getVal('status') || null,
+      benchmarkWindow: getVal('benchmarkWindow') || null,
+      classCode: classCode || null,
       date: safeDate,
       importedAt: new Date(),
       importedBy: user.uid,
       createdAt: new Date(),
       probe: true,
     };
+    const payload = Object.fromEntries(
+      Object.entries(rawProbe).filter(([, v]) => v !== undefined)
+    );
 
     try {
       await addDoc(collection(db, 'benchmarks'), payload);
