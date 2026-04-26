@@ -1073,3 +1073,209 @@ export const updateStudentNumbersFromRoster = functions
       return { callerSchoolId, dryRun, totals, results };
     }
   );
+
+// ── Replace School Roster ──────────────────────────────────────────────────
+// Admin-only. Fully replaces the active student roster for the caller's school
+// using a board CSV. Each row provides:
+//   - studentNumber  (board student number, e.g. "970591")
+//   - initials
+//   - homeroom
+//   - grade
+//
+// Behavior:
+//   - For each row: upsert a student doc keyed by `${schoolId}_${studentNumber}`.
+//   - Any existing active student in the caller's school whose studentNumber
+//     is NOT in the CSV is set to active=false (deactivated).
+//   - Any existing student in the caller's school whose studentNumber matches
+//     the legacy coded pattern (e.g. "4F-14") AND is not in the CSV is
+//     permanently deleted to clean up the old identity model.
+
+interface ReplaceRosterRow {
+  studentNumber: string;
+  initials: string;
+  homeroom: string;
+  grade: string;
+}
+
+interface ReplaceRosterInput {
+  rows: ReplaceRosterRow[];
+}
+
+interface ReplaceRosterError {
+  studentNumber: string;
+  reason: string;
+}
+
+interface ReplaceRosterResponse {
+  callerSchoolId: string;
+  created: number;
+  updated: number;
+  deactivated: number;
+  deletedLegacyCoded: number;
+  errors: ReplaceRosterError[];
+}
+
+const CODED_ID_RE = /^[0-9]+[A-Za-z]+-[0-9]+$/;
+
+function normStr(v: unknown): string {
+  return String(v ?? "").trim().replace(/\.0$/, "");
+}
+
+export const replaceSchoolRoster = functions.https.onCall(
+  async (data: ReplaceRosterInput, context): Promise<ReplaceRosterResponse> => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+    }
+    await assertIsAdmin(context.auth.uid);
+
+    const callerRoleDoc = await db.collection("user_roles").doc(context.auth.uid).get();
+    const callerSchoolId = String(callerRoleDoc.data()?.schoolId ?? "");
+    if (!callerSchoolId) {
+      throw new functions.https.HttpsError("failed-precondition", "Caller has no schoolId");
+    }
+
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    if (rows.length === 0) {
+      throw new functions.https.HttpsError("invalid-argument", "rows array required");
+    }
+    if (rows.length > 5000) {
+      throw new functions.https.HttpsError("invalid-argument", "Max 5000 rows per call");
+    }
+
+    // Normalize + dedupe input rows by studentNumber (last write wins)
+    const incoming = new Map<string, ReplaceRosterRow>();
+    for (const r of rows) {
+      const sn = normStr(r?.studentNumber);
+      if (!sn) continue;
+      incoming.set(sn, {
+        studentNumber: sn,
+        initials: normStr(r?.initials),
+        homeroom: normStr(r?.homeroom),
+        grade: normStr(r?.grade),
+      });
+    }
+
+    if (incoming.size === 0) {
+      throw new functions.https.HttpsError("invalid-argument", "No valid studentNumber rows");
+    }
+
+    // Load all existing students for this school
+    const existingSnap = await db
+      .collection("students")
+      .where("schoolId", "==", callerSchoolId)
+      .get();
+
+    type ExistingDoc = {
+      id: string;
+      studentNumber: string;
+      active: boolean;
+      isLegacyCoded: boolean;
+    };
+    const existing: ExistingDoc[] = [];
+    existingSnap.forEach((d) => {
+      const x = d.data() as any;
+      const sn = normStr(x.studentNumber);
+      existing.push({
+        id: d.id,
+        studentNumber: sn,
+        active: x.active !== false,
+        isLegacyCoded: CODED_ID_RE.test(sn),
+      });
+    });
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const errors: ReplaceRosterError[] = [];
+    let created = 0;
+    let updated = 0;
+    let deactivated = 0;
+    let deletedLegacyCoded = 0;
+
+    // Helper to commit batched writes (Firestore limit 500 ops per batch)
+    type Op =
+      | { type: "set"; ref: FirebaseFirestore.DocumentReference; data: any }
+      | { type: "update"; ref: FirebaseFirestore.DocumentReference; data: any }
+      | { type: "delete"; ref: FirebaseFirestore.DocumentReference };
+    const ops: Op[] = [];
+
+    async function flush() {
+      while (ops.length > 0) {
+        const chunk = ops.splice(0, 450);
+        const batch = db.batch();
+        for (const op of chunk) {
+          if (op.type === "set") batch.set(op.ref, op.data, { merge: true });
+          else if (op.type === "update") batch.update(op.ref, op.data);
+          else batch.delete(op.ref);
+        }
+        await batch.commit();
+      }
+    }
+
+    // Build a map of existing docs keyed by studentNumber for upsert detection
+    const existingBySn = new Map<string, ExistingDoc>();
+    for (const e of existing) {
+      if (e.studentNumber) existingBySn.set(e.studentNumber, e);
+    }
+
+    // 1) Upsert every incoming row
+    for (const row of incoming.values()) {
+      try {
+        const docId = `${callerSchoolId}_${row.studentNumber}`;
+        const ref = db.collection("students").doc(docId);
+        const prior = existingBySn.get(row.studentNumber);
+
+        const payload: any = {
+          studentNumber: row.studentNumber,
+          initials: row.initials,
+          homeroom: row.homeroom,
+          grade: row.grade,
+          schoolId: callerSchoolId,
+          active: true,
+          lastUpdated: now,
+          updatedAt: now,
+        };
+        if (!prior) {
+          payload.createdAt = now;
+          created++;
+        } else {
+          updated++;
+        }
+        ops.push({ type: "set", ref, data: payload });
+      } catch (err: any) {
+        errors.push({
+          studentNumber: row.studentNumber,
+          reason: err?.message || String(err),
+        });
+      }
+    }
+
+    // 2) For existing docs in this school NOT in incoming:
+    //    - delete legacy coded-ID rows (cleanup)
+    //    - deactivate everything else that is currently active
+    for (const e of existing) {
+      if (incoming.has(e.studentNumber)) continue;
+      const ref = db.collection("students").doc(e.id);
+      if (e.isLegacyCoded) {
+        ops.push({ type: "delete", ref });
+        deletedLegacyCoded++;
+      } else if (e.active) {
+        ops.push({
+          type: "update",
+          ref,
+          data: { active: false, lastUpdated: now, updatedAt: now },
+        });
+        deactivated++;
+      }
+    }
+
+    await flush();
+
+    return {
+      callerSchoolId,
+      created,
+      updated,
+      deactivated,
+      deletedLegacyCoded,
+      errors,
+    };
+  }
+);
