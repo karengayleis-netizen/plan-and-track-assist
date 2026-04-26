@@ -1,63 +1,132 @@
-## Problem
+# Update Student Numbers from Board Roster (new admin tool)
 
-Four students show `expected ≠ actual` after the backfill ran successfully:
+Stop trying to improve the backfill resolver. Instead, **rewrite student docs** so that `studentNumber`, `externalStudentNumber`, and `stableStudentId` all carry the board Student Number, and the old coded value (`4F-14`) moves to a new `displayCode` field. After this runs once, the existing Acadience import wizard matches naturally — no further wizard changes needed.
 
-| Coded ID | Doc ID | Expected | Actual on doc |
-|---|---|---|---|
-| 1AF-7  | zczv996viRquAHpxxyvc | 1057559 | 1020583 |
-| 1AF-13 | b7mKc4bGpP5uU0RWFbq0 | 1058132 | 1027515 |
-| 1BF-6  | CdlP82WK0Y5PWzODIsbU | 1051601 | 1057273 |
-| 1BF-16 | SejuBADMIeMew6syECrv | 1047318 | 1029135 |
+## What gets built
 
-All docs exist with `schoolId="folkstone_ps"`, so they're writable. The "value mismatch after write" almost certainly means the backfill matched the CSV row to a *different* doc that shares the same `(initials, homeroom)` or coded-id key — so it wrote the expected value to the wrong student, and this doc was either skipped or overwritten by another row in the same batch. Re-running the same CSV through the matching logic will repeat the same wrong assignment.
+### 1. New Cloud Function: `updateStudentNumbersFromRoster`
+File: `functions/src/index.ts` (admin-only callable)
 
-## Fix: write by doc ID, no matching
+Input:
+```ts
+{
+  rows: Array<{
+    boardStudentNumber: string;
+    initials: string;
+    homeroom: string;
+    grade?: string;
+    gender?: string;
+    oen?: string;
+    sourceSheet?: string;
+    rowIndex: number;
+  }>;
+  dryRun: boolean;          // true = preview, false = write
+  createMissing: boolean;   // user toggle for step 4
+}
+```
 
-Add a small admin-only Cloud Function and a UI panel that takes a list of `{docId, expectedExternalNumber}` pairs and writes each value directly to that exact document. This bypasses all initials/homeroom/coded-id resolution and guarantees the right doc gets the right number.
+Per-row logic (server-side, runs as admin so it bypasses rules):
 
-## Changes
+1. **Normalize**
+   - `boardStudentNumber = String(input).trim().replace(/\.0+$/, '')` — reject if empty or non-numeric.
+   - `initials = input.replace(/\./g, '').replace(/\s+/g, '').toUpperCase().trim()`
+   - `homeroom = input.toUpperCase().trim()`
 
-### 1. New Cloud Function `forceSetExternalStudentNumbers` (`functions/src/index.ts`)
+2. **Match within caller's `schoolId`**
+   - First pass: students where `normInitials === initials AND normHomeroom === homeroom`.
+   - If 0 → second pass with `homeroomStem` (existing helper logic, e.g. `4AF` → `4`).
+   - If still 0 → action `create` (when `createMissing`) or `skipped`.
+   - If exactly 1 → action `update`.
+   - If > 1 → action `ambiguous` (return candidate IDs; never auto-write).
 
-- Admin-only (reuse `assertIsAdmin`).
-- Input: `{ entries: Array<{ docId: string; externalStudentNumber: string }> }`, max 500.
-- For each entry, in a single batched write:
-  - Read `students/{docId}`. If missing → record `notFound`.
-  - If `schoolId` doesn't match caller's `schoolId` → record `wrongSchool` (don't write).
-  - Else `update({ externalStudentNumber, updatedAt: serverTimestamp() })`.
-  - After commit, re-read the doc and confirm `externalStudentNumber === expected`; record `verified` or `verifyMismatch` with the actual value.
-- Return `{ totals, results: [{ docId, action, before, after, actualAfterRead, reason? }] }`.
-- Use `db.runTransaction` per entry (or batched commit + post-commit re-read) so we get a true round-trip verification, which is what surfaced the original problem.
+3. **Update payload** (only when action = `update`):
+   ```ts
+   {
+     displayCode: existing.displayCode || existing.studentNumber, // preserve "4F-14"
+     studentNumber: boardStudentNumber,
+     externalStudentNumber: boardStudentNumber,
+     stableStudentId: (
+       !existing.stableStudentId ||
+       /^[A-Z0-9]+-\d+$/i.test(existing.stableStudentId)
+     ) ? boardStudentNumber : existing.stableStudentId,
+     // initials, homeroom, grade, schoolId left untouched
+     updatedAt, lastUpdated
+   }
+   ```
 
-### 2. New UI panel `ForceSetBoardNumbersPanel` on the Students tab
+4. **Create payload** (when action = `create`):
+   ```ts
+   {
+     schoolId: callerSchoolId,
+     studentNumber: boardStudentNumber,
+     externalStudentNumber: boardStudentNumber,
+     stableStudentId: boardStudentNumber,
+     initials, homeroom,
+     grade: grade || '',
+     firstName: '', lastName: '',
+     // plus the standard required defaults from StudentSchema
+     createdAt, updatedAt, lastUpdated
+   }
+   ```
 
-Location: `src/components/students/ForceSetBoardNumbersPanel.tsx`, rendered in `StudentsTab.tsx` next to `ServerBackfillPanel`.
+5. **Verification re-read** (write mode only): re-fetch each touched doc and confirm `externalStudentNumber === boardStudentNumber`. Mark row `verified: true|false`.
 
-- Textarea accepting CSV / pasted lines: `docId,externalStudentNumber` (one per line, header optional).
-- Pre-filled with the 4 known mismatches as a one-click "Load known mismatches" button so the admin can run them immediately:
-  ```
-  zczv996viRquAHpxxyvc,1057559
-  b7mKc4bGpP5uU0RWFbq0,1058132
-  CdlP82WK0Y5PWzODIsbU,1051601
-  SejuBADMIeMew6syECrv,1047318
-  ```
-- "Run force-set" button calls the new callable.
-- Renders the per-row results table (action + before → after + verified actual) and a "Download report CSV" button matching the existing `ServerBackfillPanel` style.
-- After success, calls `onAfterRun?.()` so the roster refreshes.
+Returns: `{ callerSchoolId, totals, results: [{ rowIndex, action, docId?, before, after, candidateIds?, verified?, reason? }] }`.
 
-### 3. Build & deploy
+### 2. New UI panel: `UpdateStudentNumbersFromRosterPanel.tsx`
+Location: `src/components/students/`, mounted in `StudentsTab.tsx` (admin only).
 
-`functions/package.json` is already set up; the new function ships on the next deploy of the `functions` directory.
+Flow:
+1. **Upload CSV / XLSX** — reuse the existing `parseBackfillFile` helper (it already detects "Student Number", "Student Initials", "Section Number / Homeroom", "Grade"). Add OEN + Gender + Source Sheet pass-through.
+2. **Preview** — call the function with `dryRun: true`. Render a table with these columns:
 
-## Why this approach
+   | CSV # | Initials | Homeroom | Matched doc id | Old studentNumber | New studentNumber | displayCode | Action |
+   |---|---|---|---|---|---|---|---|
 
-- The mismatches are caused by *matching* logic picking the wrong doc, not by a write/permission failure. Any tool that re-runs matching will keep getting it wrong.
-- Writing by `docId` is unambiguous and trivially auditable.
-- Post-write re-read + compare gives definitive proof the value stuck (this is what the original report was doing manually).
-- Keeps the existing backfill panel untouched — this is a surgical "manual override" tool the admin can use whenever the CSV-driven matcher disagrees with reality.
+   Action badge colors: update (blue), create (green), ambiguous (amber, expandable to show candidate IDs + a per-row "pick" radio), skipped (grey).
+3. **Confirm & write** — toggles: ☑ Create missing students. Button disabled until preview ran.
+4. **Results card** — totals: updated, created, ambiguous, skipped, failed; plus a verification line ("X of Y verified after re-read"). Download CSV report button.
+5. After write: call `refetch()` from `useStudents` so the roster view reflects new numbers.
 
-## After the fix
+### 3. Type addition
+`src/types/index.ts` — add:
+```ts
+displayCode?: string; // human-readable code like "4F-14", preserved from legacy studentNumber
+```
+No other fields renamed; `Student.studentNumber` keeps its name and now carries the board number going forward.
 
-Once the 4 docs are corrected, re-run the benchmark Import Wizard — the four previously-mismatched IDs (1057559, 1058132, 1051601, 1047318) will now resolve to the correct students.
+## Files changed
 
-Optional follow-up (not in this plan): investigate *why* the matcher chose the wrong docs — almost certainly a duplicate `(initials, homeroom)` collision or a stale `studentNumber` collision in the roster — and add a duplicate-detection warning to `ServerBackfillPanel` so future runs flag ambiguous targets before writing.
+- `functions/src/index.ts` — new `updateStudentNumbersFromRoster` callable
+- `src/components/students/UpdateStudentNumbersFromRosterPanel.tsx` — new panel
+- `src/components/tabs/StudentsTab.tsx` — mount panel for admins
+- `src/types/index.ts` — add `displayCode?: string`
+- (optional cosmetic) any student row component that shows the coded ID — display `displayCode || studentNumber` so old "4F-14" still shows somewhere
+
+No changes needed to `useImportWizard.ts` — its existing 3-tier match (`externalStudentNumber` → `studentNumber` → `stableStudentId`) all point to the board number after this runs.
+
+## Roll-out
+
+1. Deploy: `firebase deploy --only functions`
+2. Students tab → **Update Student Numbers from Board Roster** → upload roster → review preview → confirm.
+3. Re-run Acadience import wizard. Row with `Student Number = 970591` matches the J.P.E. doc whose `externalStudentNumber = 970591`.
+
+## Acceptance — J.P.E.
+
+| Field | Before | After |
+|---|---|---|
+| `studentNumber` | `4F-14` | `970591` |
+| `externalStudentNumber` | (empty) | `970591` |
+| `stableStudentId` | `4F-14` (or empty) | `970591` |
+| `displayCode` | (n/a) | `4F-14` |
+| `initials`, `homeroom`, `grade`, `schoolId` | unchanged | unchanged |
+
+## Safety guarantees
+
+- Admin-only (checks caller's custom claims).
+- `schoolId` scoped — never touches docs outside the caller's school.
+- Coded IDs (matching `^[A-Z0-9]+-\d+$`) are **never** written into `externalStudentNumber` or `studentNumber`.
+- Ambiguous matches are never auto-written; user must resolve.
+- Dry-run preview is mandatory — write button only enables after preview returns.
+- Post-write re-read verification per row.
+- Idempotent: re-running on already-migrated rows results in `update` with identical values (no harm) or can be skipped via an `alreadyMigrated` short-circuit (`existing.externalStudentNumber === boardStudentNumber`).

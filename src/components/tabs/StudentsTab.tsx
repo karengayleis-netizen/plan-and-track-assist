@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow, type DetectedColumns } from '@/lib/backfillParser';
 import { ServerBackfillPanel } from '@/components/students/ServerBackfillPanel';
 import { ForceSetBoardNumbersPanel } from '@/components/students/ForceSetBoardNumbersPanel';
+import { UpdateStudentNumbersFromRosterPanel } from '@/components/students/UpdateStudentNumbersFromRosterPanel';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -830,6 +831,11 @@ export function StudentsTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Canonical migration — board Student Number becomes the primary ID */}
+      {isAdmin && (
+        <UpdateStudentNumbersFromRosterPanel onAfterRun={() => refetch()} />
+      )}
 
       {/* Server-side backfill (Admin SDK, bypasses rules) */}
       {isAdmin && (

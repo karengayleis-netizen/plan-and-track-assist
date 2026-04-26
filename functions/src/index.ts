@@ -711,3 +711,365 @@ export const syncClaimsFromUserRoles = functions.firestore
     functions.logger.info("Setting claims for uid:", uid, claims);
     await admin.auth().setCustomUserClaims(uid, claims);
   });
+
+// ── Update Student Numbers from Board Roster ─────────────────────────────────
+// Admin-only. Rewrites student docs so board Student Number becomes the canonical
+// identifier across studentNumber / externalStudentNumber / stableStudentId.
+// Old coded value (e.g. "4F-14") is preserved in displayCode.
+
+interface UpdateNumbersRow {
+  boardStudentNumber: string;
+  initials: string;
+  homeroom: string;
+  grade?: string;
+  gender?: string;
+  oen?: string;
+  sourceSheet?: string;
+  rowIndex: number;
+}
+
+interface UpdateNumbersData {
+  rows: UpdateNumbersRow[];
+  dryRun: boolean;
+  createMissing: boolean;
+}
+
+type UpdateAction = "update" | "create" | "ambiguous" | "skipped" | "alreadyMigrated" | "errored";
+
+interface UpdateRowResult {
+  rowIndex: number;
+  action: UpdateAction;
+  docId?: string;
+  candidateIds?: string[];
+  before?: {
+    studentNumber?: string;
+    externalStudentNumber?: string;
+    stableStudentId?: string;
+    displayCode?: string;
+  };
+  after?: {
+    studentNumber?: string;
+    externalStudentNumber?: string;
+    stableStudentId?: string;
+    displayCode?: string;
+  };
+  verified?: boolean;
+  reason?: string;
+  csvBoardNumber: string;
+  csvInitials: string;
+  csvHomeroom: string;
+}
+
+const normInitials = (s: string): string =>
+  (s || "").replace(/\./g, "").replace(/\s+/g, "").toUpperCase().trim();
+
+const normHomeroom = (s: string): string =>
+  (s || "").toUpperCase().trim();
+
+const homeroomStem = (s: string): string => {
+  const norm = normHomeroom(s);
+  const numMatch = norm.match(/^(\d+)/);
+  if (numMatch) return numMatch[1];
+  const letterMatch = norm.match(/^([A-Z]+)/);
+  if (letterMatch) return letterMatch[1];
+  return norm;
+};
+
+const normBoardNumber = (v: unknown): string => {
+  const s = String(v ?? "").trim().replace(/\.0+$/, "");
+  return s;
+};
+
+const looksLikeCodedId = (v: unknown): boolean => {
+  const s = String(v ?? "").trim();
+  return /^[A-Z0-9]+-\d+$/i.test(s);
+};
+
+export const updateStudentNumbersFromRoster = functions
+  .runWith({ timeoutSeconds: 540, memory: "512MB" })
+  .https.onCall(
+    async (data: UpdateNumbersData, context) => {
+      if (!context.auth?.uid) {
+        throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+      }
+      await assertIsAdmin(context.auth.uid);
+
+      const callerRoleDoc = await db.collection("user_roles").doc(context.auth.uid).get();
+      const callerSchoolId = (callerRoleDoc.data()?.schoolId ?? "").toString().trim();
+      if (!callerSchoolId) {
+        throw new functions.https.HttpsError("failed-precondition", "Caller has no schoolId");
+      }
+
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const dryRun = !!data?.dryRun;
+      const createMissing = !!data?.createMissing;
+
+      // Load full school roster once
+      const rosterSnap = await db
+        .collection("students")
+        .where("schoolId", "==", callerSchoolId)
+        .get();
+
+      interface RosterDoc {
+        id: string;
+        initials: string;
+        homeroom: string;
+        grade?: string;
+        studentNumber?: string;
+        externalStudentNumber?: string;
+        stableStudentId?: string;
+        displayCode?: string;
+      }
+
+      const roster: RosterDoc[] = rosterSnap.docs.map((d) => {
+        const x = d.data() as any;
+        return {
+          id: d.id,
+          initials: x.initials ?? "",
+          homeroom: x.homeroom ?? "",
+          grade: x.grade ?? "",
+          studentNumber: x.studentNumber ?? "",
+          externalStudentNumber: x.externalStudentNumber ?? "",
+          stableStudentId: x.stableStudentId ?? "",
+          displayCode: x.displayCode ?? "",
+        };
+      });
+
+      const results: UpdateRowResult[] = [];
+      const totals = {
+        update: 0,
+        create: 0,
+        ambiguous: 0,
+        skipped: 0,
+        alreadyMigrated: 0,
+        errored: 0,
+        verified: 0,
+        verifyFailed: 0,
+      };
+
+      const writes: Array<{
+        rowIndex: number;
+        kind: "update" | "create";
+        docRef: admin.firestore.DocumentReference;
+        payload: Record<string, unknown>;
+        expectedBoardNumber: string;
+      }> = [];
+
+      for (const row of rows) {
+        const board = normBoardNumber(row.boardStudentNumber);
+        const init = normInitials(row.initials);
+        const home = normHomeroom(row.homeroom);
+
+        const baseResult: Pick<UpdateRowResult, "rowIndex" | "csvBoardNumber" | "csvInitials" | "csvHomeroom"> = {
+          rowIndex: row.rowIndex,
+          csvBoardNumber: board,
+          csvInitials: init,
+          csvHomeroom: home,
+        };
+
+        if (!board || !/^\d+$/.test(board)) {
+          results.push({ ...baseResult, action: "skipped", reason: "Invalid or missing board Student Number" });
+          totals.skipped++;
+          continue;
+        }
+        if (!init || !home) {
+          results.push({ ...baseResult, action: "skipped", reason: "Missing initials or homeroom" });
+          totals.skipped++;
+          continue;
+        }
+
+        // Match: exact initials + homeroom
+        let candidates = roster.filter(
+          (s) => normInitials(s.initials) === init && normHomeroom(s.homeroom) === home
+        );
+
+        // Fallback: initials + homeroom stem
+        if (candidates.length === 0) {
+          const stem = homeroomStem(home);
+          candidates = roster.filter(
+            (s) => normInitials(s.initials) === init && homeroomStem(s.homeroom) === stem
+          );
+        }
+
+        if (candidates.length > 1) {
+          results.push({
+            ...baseResult,
+            action: "ambiguous",
+            candidateIds: candidates.map((c) => c.id),
+            reason: `${candidates.length} candidates with same initials+homeroom`,
+          });
+          totals.ambiguous++;
+          continue;
+        }
+
+        if (candidates.length === 0) {
+          if (!createMissing) {
+            results.push({ ...baseResult, action: "skipped", reason: "No matching student (create disabled)" });
+            totals.skipped++;
+            continue;
+          }
+          // Plan a create
+          const now = admin.firestore.FieldValue.serverTimestamp();
+          const payload: Record<string, unknown> = {
+            schoolId: callerSchoolId,
+            studentNumber: board,
+            externalStudentNumber: board,
+            stableStudentId: board,
+            initials: init,
+            homeroom: home,
+            grade: row.grade ?? "",
+            firstName: "",
+            lastName: "",
+            yearGroup: "",
+            className: "",
+            sen: false,
+            pupilPremium: false,
+            eal: false,
+            isFocusStudent: false,
+            isHighNeed: false,
+            tags: [],
+            createdAt: now,
+            updatedAt: now,
+            lastUpdated: now,
+          };
+          if (row.gender) payload.gender = row.gender;
+          if (row.oen) payload.oen = row.oen;
+
+          const newRef = db.collection("students").doc();
+          results.push({
+            ...baseResult,
+            action: "create",
+            docId: newRef.id,
+            after: {
+              studentNumber: board,
+              externalStudentNumber: board,
+              stableStudentId: board,
+            },
+          });
+          totals.create++;
+          writes.push({ rowIndex: row.rowIndex, kind: "create", docRef: newRef, payload, expectedBoardNumber: board });
+          continue;
+        }
+
+        // Exactly one match → update
+        const existing = candidates[0];
+        const before = {
+          studentNumber: existing.studentNumber || "",
+          externalStudentNumber: existing.externalStudentNumber || "",
+          stableStudentId: existing.stableStudentId || "",
+          displayCode: existing.displayCode || "",
+        };
+
+        // Skip if already migrated
+        if (
+          before.externalStudentNumber === board &&
+          before.studentNumber === board
+        ) {
+          results.push({
+            ...baseResult,
+            action: "alreadyMigrated",
+            docId: existing.id,
+            before,
+            after: before,
+            reason: "Already has board number on both fields",
+          });
+          totals.alreadyMigrated++;
+          continue;
+        }
+
+        const newDisplayCode = existing.displayCode
+          ? existing.displayCode
+          : (looksLikeCodedId(existing.studentNumber) ? existing.studentNumber || "" : (existing.displayCode || ""));
+
+        const newStableId = (
+          !existing.stableStudentId ||
+          looksLikeCodedId(existing.stableStudentId)
+        ) ? board : existing.stableStudentId;
+
+        const after = {
+          studentNumber: board,
+          externalStudentNumber: board,
+          stableStudentId: newStableId,
+          displayCode: newDisplayCode,
+        };
+
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const payload: Record<string, unknown> = {
+          studentNumber: board,
+          externalStudentNumber: board,
+          stableStudentId: newStableId,
+          updatedAt: now,
+          lastUpdated: now,
+          schoolId: callerSchoolId,
+        };
+        if (newDisplayCode) payload.displayCode = newDisplayCode;
+        if (row.gender) payload.gender = row.gender;
+        if (row.oen) payload.oen = row.oen;
+
+        results.push({
+          ...baseResult,
+          action: "update",
+          docId: existing.id,
+          before,
+          after,
+        });
+        totals.update++;
+        writes.push({
+          rowIndex: row.rowIndex,
+          kind: "update",
+          docRef: db.collection("students").doc(existing.id),
+          payload,
+          expectedBoardNumber: board,
+        });
+      }
+
+      if (dryRun || writes.length === 0) {
+        return { callerSchoolId, dryRun, totals, results };
+      }
+
+      // Commit in batches of 400
+      const BATCH = 400;
+      for (let i = 0; i < writes.length; i += BATCH) {
+        const slice = writes.slice(i, i + BATCH);
+        const batch = db.batch();
+        for (const w of slice) {
+          if (w.kind === "create") {
+            batch.set(w.docRef, w.payload);
+          } else {
+            batch.set(w.docRef, w.payload, { merge: true });
+          }
+        }
+        try {
+          await batch.commit();
+        } catch (e: any) {
+          for (const w of slice) {
+            const r = results.find((x) => x.rowIndex === w.rowIndex);
+            if (r) {
+              r.action = "errored";
+              r.reason = `Batch commit failed: ${e?.message || String(e)}`;
+              totals.errored++;
+            }
+          }
+        }
+      }
+
+      // Verify each touched doc
+      for (const w of writes) {
+        try {
+          const snap = await w.docRef.get();
+          const x = snap.data() as any;
+          const ok = !!x && String(x.externalStudentNumber ?? "") === w.expectedBoardNumber;
+          const r = results.find((x2) => x2.rowIndex === w.rowIndex);
+          if (r && r.action !== "errored") {
+            r.verified = ok;
+            if (ok) totals.verified++;
+            else totals.verifyFailed++;
+          }
+        } catch {
+          totals.verifyFailed++;
+        }
+      }
+
+      return { callerSchoolId, dryRun, totals, results };
+    }
+  );
