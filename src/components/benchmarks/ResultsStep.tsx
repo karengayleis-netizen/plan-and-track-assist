@@ -34,7 +34,15 @@ export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSa
   const showDiagnostics = unaccountedFor !== 0 || result.loopAborted || (result.importedRows === 0 && result.attemptedRows && result.attemptedRows > 0);
 
   const [probing, setProbing] = useState(false);
-  const [probeResult, setProbeResult] = useState<{ ok: boolean; code?: string; message?: string } | null>(null);
+  const [probeResult, setProbeResult] = useState<{
+    ok: boolean;
+    code?: string;
+    message?: string;
+    rowNumber?: number;
+    studentNumber?: string;
+    schoolIdUsed?: string;
+    payload?: Record<string, unknown>;
+  } | null>(null);
 
   const runProbe = async () => {
     if (!onProbeWrite) return;
