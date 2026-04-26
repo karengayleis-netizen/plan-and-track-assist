@@ -493,6 +493,11 @@ export function useImportWizard(onComplete?: () => void) {
       ? firstMatched.parsedDate
       : new Date();
 
+    const statusVal = getVal('status');
+    const benchmarkWindowVal = getVal('benchmarkWindow');
+    const scoreVal = firstMatched.score || '0';
+    const rawScoreVal = getVal('rawScore') || scoreVal;
+
     const rawProbe: Record<string, unknown> = {
       schoolId: schoolIdUsed,
       studentId: firstMatched.matchedStudentId,
@@ -502,19 +507,23 @@ export function useImportWizard(onComplete?: () => void) {
       assessmentFamily: preset.assessmentFamily,
       assessmentType: firstMatched.assessmentType || 'PROBE',
       assessmentName: firstMatched.assessmentType || 'PROBE',
-      score: firstMatched.score || '0',
-      scoreLabel: getVal('status') || null,
-      benchmarkWindow: getVal('benchmarkWindow') || null,
-      classCode: classCode || null,
+      score: scoreVal,
       date: safeDate,
       importedAt: new Date(),
       importedBy: user.uid,
       createdAt: new Date(),
       probe: true,
     };
-    const payload = Object.fromEntries(
-      Object.entries(rawProbe).filter(([, v]) => v !== undefined)
-    );
+    if (statusVal) rawProbe.scoreLabel = statusVal;
+    if (rawScoreVal) rawProbe.rawScore = rawScoreVal;
+    if (benchmarkWindowVal) rawProbe.benchmarkWindow = benchmarkWindowVal;
+    if (classCode) rawProbe.classCode = classCode;
+
+    const payload = removeUndefinedFields(rawProbe);
+    const stillUndefined = Object.entries(payload).filter(([, v]) => v === undefined);
+    if (stillUndefined.length) {
+      console.error('[ImportWizard] probe undefined survived sanitization', stillUndefined.map(([k]) => k));
+    }
 
     try {
       await addDoc(collection(db, 'benchmarks'), payload);
