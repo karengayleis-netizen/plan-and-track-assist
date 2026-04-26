@@ -263,6 +263,7 @@ export function useImportWizard(onComplete?: () => void) {
     }
 
     const classSummary: Record<string, number> = {};
+    const writeErrors: string[] = [];
 
     for (const row of validRows) {
       try {
@@ -274,6 +275,10 @@ export function useImportWizard(onComplete?: () => void) {
         const percentVal = percentStr ? parseFloat(percentStr) : undefined;
 
         const classCode = row.csvHomeroom || getVal('classCode') || '';
+
+        const safeDate = row.parsedDate && !isNaN(row.parsedDate.getTime())
+          ? row.parsedDate
+          : new Date();
 
         await addDoc(collection(db, 'benchmarks'), {
           schoolId: user.schoolId || '',
@@ -294,7 +299,7 @@ export function useImportWizard(onComplete?: () => void) {
           strand: getVal('strand') || undefined,
           classCode: classCode || undefined,
           subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
-          date: row.parsedDate || new Date(),
+          date: safeDate,
           term: getVal('benchmarkWindow') || '',
           notes: getVal('notes') || undefined,
           ref: getVal('ref') || undefined,
@@ -312,8 +317,20 @@ export function useImportWizard(onComplete?: () => void) {
         // Track per-class summary
         const summaryKey = row.matchedHomeroom || classCode || 'Unknown';
         classSummary[summaryKey] = (classSummary[summaryKey] || 0) + 1;
-      } catch {
+      } catch (err) {
         errorCount++;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[ImportWizard] addDoc failed for row', row.rowIndex, {
+          error: msg,
+          studentId: row.matchedStudentId,
+          studentNumber: row.matchedStudentNumber,
+          schoolId: user.schoolId,
+          assessmentType: row.assessmentType,
+          score: row.score,
+        });
+        if (writeErrors.length < 5) {
+          writeErrors.push(`Row ${row.rowIndex + 2}: ${msg}`);
+        }
       }
     }
 
@@ -324,6 +341,8 @@ export function useImportWizard(onComplete?: () => void) {
       skippedRows: state.importRows.length - validRows.length,
       unmatchedRows: unmatchedCount,
       errorRows: errorCount,
+      failedToSaveRows: errorCount,
+      writeErrors,
       classSummary: Object.keys(classSummary).length > 0 ? classSummary : undefined,
     };
 
