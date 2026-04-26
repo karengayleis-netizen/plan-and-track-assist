@@ -3,6 +3,7 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, D
 import { db } from '@/lib/firebase';
 import { Student } from '@/types';
 import { StudentSchema, validateData } from '@/lib/validations';
+import { normalizeGrade } from '@/types/homeroom';
 import { useAuth } from './useAuth';
 
 export function useStudents() {
@@ -39,6 +40,9 @@ export function useStudents() {
         return {
           id: docSnapshot.id,
           ...data,
+          // Normalize grade at the read boundary so Kindergarten variants
+          // (JK, SK, "Kindergarten", "0", etc.) all surface as 'K'.
+          grade: normalizeGrade(data.grade),
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
           lastUpdated: data.lastUpdated?.toDate() || data.updatedAt?.toDate(),
@@ -71,7 +75,7 @@ export function useStudents() {
       studentNumber: String(student.studentNumber ?? '').trim().replace(/\.0$/, ''),
       initials: (student.initials ?? '').trim(),
       homeroom: (student.homeroom ?? '').trim(),
-      grade: String(student.grade ?? '').trim(),
+      grade: normalizeGrade(student.grade),
       schoolId: user.schoolId,
       active: student.active ?? true,
       isFocusStudent: student.isFocusStudent ?? false,

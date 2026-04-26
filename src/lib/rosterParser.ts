@@ -83,7 +83,8 @@ export async function parseRosterCSV(file: File): Promise<RosterParseResult> {
     const studentNumber = numCol.index >= 0 ? normalizeStudentNumber(cells[numCol.index]) : '';
     const initials = initCol.index >= 0 ? (cells[initCol.index] || '').trim() : '';
     const homeroom = homeCol.index >= 0 ? (cells[homeCol.index] || '').trim() : '';
-    const grade = gradeCol.index >= 0 ? (cells[gradeCol.index] || '').trim() : '';
+    const rawGrade = gradeCol.index >= 0 ? (cells[gradeCol.index] || '').trim() : '';
+    const grade = normalizeGrade(rawGrade);
 
     const errors: string[] = [];
     const warnings: string[] = [];
