@@ -519,6 +519,174 @@ export const backfillExternalStudentNumbers = functions.https.onCall(
   }
 );
 
+// ── Force-set External Student Numbers by doc ID ────────────────────────────
+// Admin-only. Bypasses all matching logic. Writes externalStudentNumber to a
+// specific student doc and verifies via re-read.
+
+type ForceSetAction =
+  | "verified"
+  | "verifyMismatch"
+  | "alreadyCorrect"
+  | "notFound"
+  | "wrongSchool"
+  | "errored"
+  | "skippedInvalidInput";
+
+interface ForceSetEntry {
+  docId: string;
+  externalStudentNumber: string;
+}
+
+interface ForceSetInput {
+  entries: ForceSetEntry[];
+}
+
+interface ForceSetRowResult {
+  docId: string;
+  action: ForceSetAction;
+  before?: string;
+  after: string;
+  actualAfterRead?: string;
+  schoolId?: string;
+  reason?: string;
+}
+
+interface ForceSetResponse {
+  callerSchoolId: string;
+  totals: Record<ForceSetAction, number>;
+  results: ForceSetRowResult[];
+}
+
+export const forceSetExternalStudentNumbers = functions.https.onCall(
+  async (data: ForceSetInput, context): Promise<ForceSetResponse> => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError("unauthenticated", "Must be logged in");
+    }
+    await assertIsAdmin(context.auth.uid);
+
+    const callerRoleDoc = await db.collection("user_roles").doc(context.auth.uid).get();
+    const callerSchoolId = (callerRoleDoc.data()?.schoolId ?? "").toString();
+    if (!callerSchoolId) {
+      throw new functions.https.HttpsError("failed-precondition", "Caller has no schoolId");
+    }
+
+    const entries = Array.isArray(data?.entries) ? data.entries : [];
+    if (entries.length === 0) {
+      throw new functions.https.HttpsError("invalid-argument", "entries array required");
+    }
+    if (entries.length > 500) {
+      throw new functions.https.HttpsError("invalid-argument", "Max 500 entries per call");
+    }
+
+    const totals: Record<ForceSetAction, number> = {
+      verified: 0,
+      verifyMismatch: 0,
+      alreadyCorrect: 0,
+      notFound: 0,
+      wrongSchool: 0,
+      errored: 0,
+      skippedInvalidInput: 0,
+    };
+    const results: ForceSetRowResult[] = [];
+
+    for (const e of entries) {
+      const docId = (e?.docId ?? "").toString().trim();
+      const board = normalizeBoard(e?.externalStudentNumber);
+      if (!docId || !board) {
+        totals.skippedInvalidInput++;
+        results.push({
+          docId,
+          after: board,
+          action: "skippedInvalidInput",
+          reason: !docId ? "Missing docId" : "Missing/invalid externalStudentNumber",
+        });
+        continue;
+      }
+
+      try {
+        const ref = db.collection("students").doc(docId);
+        const snap = await ref.get();
+        if (!snap.exists) {
+          totals.notFound++;
+          results.push({ docId, after: board, action: "notFound" });
+          continue;
+        }
+        const cur = snap.data() as any;
+        const curSchoolId = (cur?.schoolId ?? "").toString();
+        const before = normalizeBoard(cur?.externalStudentNumber);
+
+        if (curSchoolId && curSchoolId !== callerSchoolId) {
+          totals.wrongSchool++;
+          results.push({
+            docId,
+            before: cur?.externalStudentNumber,
+            after: board,
+            schoolId: curSchoolId,
+            action: "wrongSchool",
+            reason: `Doc schoolId=${curSchoolId} != caller ${callerSchoolId}`,
+          });
+          continue;
+        }
+
+        if (before === board) {
+          totals.alreadyCorrect++;
+          results.push({
+            docId,
+            before: cur?.externalStudentNumber,
+            after: board,
+            actualAfterRead: cur?.externalStudentNumber,
+            schoolId: curSchoolId,
+            action: "alreadyCorrect",
+          });
+          continue;
+        }
+
+        await ref.update({
+          externalStudentNumber: board,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Re-read for definitive verification
+        const verifySnap = await ref.get();
+        const actualAfter = normalizeBoard((verifySnap.data() as any)?.externalStudentNumber);
+
+        if (actualAfter === board) {
+          totals.verified++;
+          results.push({
+            docId,
+            before: cur?.externalStudentNumber,
+            after: board,
+            actualAfterRead: actualAfter,
+            schoolId: curSchoolId,
+            action: "verified",
+          });
+        } else {
+          totals.verifyMismatch++;
+          results.push({
+            docId,
+            before: cur?.externalStudentNumber,
+            after: board,
+            actualAfterRead: actualAfter,
+            schoolId: curSchoolId,
+            action: "verifyMismatch",
+            reason: `After write, doc still reads ${actualAfter || "∅"}`,
+          });
+        }
+      } catch (err: any) {
+        totals.errored++;
+        results.push({
+          docId,
+          after: board,
+          action: "errored",
+          reason: err?.message || String(err),
+        });
+      }
+    }
+
+    return { callerSchoolId, totals, results };
+  }
+);
+
 export const syncClaimsFromUserRoles = functions.firestore
   .document("user_roles/{uid}")
   .onWrite(async (change, context) => {
