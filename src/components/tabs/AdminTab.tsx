@@ -20,6 +20,7 @@ import { StatCard } from '@/components/dashboard';
 import { formatGradeDisplay } from '@/types/homeroom';
 import { getStudentRiskLevel, RISK_LABEL, RISK_COLOR, type RiskLevel } from '@/lib/studentRisk';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { LeadershipDashboard } from '@/components/admin/LeadershipDashboard';
 
 interface AnalyzeSchoolDataResponse {
   recommendations: string;
@@ -351,6 +352,8 @@ export function AdminTab() {
 
   return (
     <div className="space-y-6">
+      <LeadershipDashboard />
+
       {/* Class Management */}
       <Card className="border-border/50 shadow-sm">
         <CardHeader className="pb-4">
