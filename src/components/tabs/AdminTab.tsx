@@ -18,6 +18,8 @@ import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Act
 import { toast } from 'sonner';
 import { StatCard } from '@/components/dashboard';
 import { formatGradeDisplay } from '@/types/homeroom';
+import { getStudentRiskLevel, RISK_LABEL, RISK_COLOR, type RiskLevel } from '@/lib/studentRisk';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 interface AnalyzeSchoolDataResponse {
   recommendations: string;
