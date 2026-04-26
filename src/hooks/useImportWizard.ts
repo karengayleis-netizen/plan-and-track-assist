@@ -569,6 +569,7 @@ export function useImportWizard(onComplete?: () => void) {
     updateMapping,
     confirmMapping,
     runImport,
+    probeWrite,
     loadTemplates,
     applyTemplate,
     saveTemplate,
