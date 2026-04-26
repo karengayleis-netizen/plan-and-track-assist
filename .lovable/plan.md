@@ -1,72 +1,57 @@
-# Why 0 rows imported when 971 rows matched
+## Eliminate `undefined` from every Firestore benchmark write
 
-## What the numbers tell us
+The probe failed with `[invalid-argument] Unsupported field value: undefined (found in field scoreLabel ...)`. The current code in `useImportWizard.ts` already coerces `getVal('status') || null`, so an `undefined` should be impossible there — which means the failing write came from a different code path or from a field we are not coercing. I will harden every write site so `undefined` cannot reach Firestore from any benchmark import or save, exactly as you specified.
 
-From your last run:
-- **Total: 980** · Imported: **0** · Skipped: **9** · Unmatched: **9** · Failed to Save: **0**
-- The downloaded error CSV contains exactly **9 rows**, all for student `1093503` (a kindergarten student not in your roster). Those 9 are correctly classified as "no match".
-- That leaves **971 rows that matched a real student, were valid, entered the import loop, and yet neither succeeded (`Imported`) nor failed (`Failed to Save`)**.
+### What I will change
 
-That combination is mathematically impossible with the current code — unless one of three things is happening, and the current logging can't tell us which:
+**1. Add a shared `removeUndefinedFields` helper** in `src/hooks/useImportWizard.ts` (top of file):
 
-1. **Firestore rules silently reject every `addDoc`** but the rejection isn't reaching our `catch` block (e.g. a network-level error, or the promise is being lost).
-2. **The loop is exiting early** (browser killed the tab, React unmounted the wizard mid-import, or an exception escaped the `for` loop entirely).
-3. **The result object the UI shows is stale** — from a previous wizard run — and the real run is still pending or already failed.
-
-## Most likely culprit: Firestore rules
-
-Your `firestore.rules` for `/benchmarks/{id}` requires:
-
-```text
-allow create: if requestSameSchool();
+```ts
+function removeUndefinedFields<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as Partial<T>;
+}
 ```
 
-…and `requestSameSchool()` requires `request.resource.data.schoolId == mySchoolId()`. The import code writes `schoolId: user.schoolId || ''`. If `user.schoolId` is ever an empty string at the moment of write (race with auth refresh), every single `addDoc` is rejected with `PERMISSION_DENIED`.
+**2. Rebuild the bulk import payload (`runImport`, lines ~315–353)** so optional fields are *omitted* when blank instead of being set to `null`. Acadience-specific behaviour:
+- `score` ← CSV `Score`
+- `rawScore` ← CSV `rawScore` if present, else fall back to `score`
+- `scoreLabel` ← CSV `Status` if present, otherwise omit the field entirely
+- All other optionals (`benchmarkWindow`, `strand`, `classCode`, `notes`, `ref`, `percent`, `reference`, `term`) — only included when they have a real value
 
-But your auth log clearly shows `schoolId: "folkstone_ps"` — so this should be fine. We need to **prove it** instead of guessing.
+**3. Defensive validation right before `addDoc`:**
+```ts
+const cleanPayload = removeUndefinedFields(payload);
+const stillUndefined = Object.entries(cleanPayload).filter(([, v]) => v === undefined);
+if (stillUndefined.length) {
+  console.error('[ImportWizard] undefined survived sanitization', stillUndefined);
+}
+await addDoc(collection(db, 'benchmarks'), cleanPayload);
+```
 
-## The fix: make every outcome visible
+**4. Apply the same sanitization to `probeWrite`** (lines ~472–496) so the next probe run uses the identical clean path.
 
-I will tighten `runImport` so no row can disappear silently, and add a one-time "import diagnostics" panel.
+**5. Fix `useBenchmarks.addBenchmark`** in `src/hooks/useBenchmarks.ts`:
+- Zod's `.optional()` produces `undefined` for missing keys, and the result is spread into `addDoc`. Wrap that doc in `removeUndefinedFields` too.
+- Also guard `schoolId: user?.schoolId` — if it's `undefined`, the field is `undefined` and Firestore rejects. Either omit it or fail fast with a clear error.
 
-### 1. Tighten counters in `src/hooks/useImportWizard.ts`
+**6. Same treatment for the legacy CSV uploader** in `BenchmarksTab.tsx → handleCSVUpload` (passes `notesVal`, `refVal` that can be `undefined`). It calls `addBenchmark`, so fixing #5 covers it, but I'll spot-check.
 
-- Compute `attemptedCount` (= `validRows.length`) up front and assert that `attemptedCount === importedCount + errorCount` at the end. If it doesn't, log a hard error to the console with the exact deltas.
-- Wrap the entire `for` loop in a `try/catch` so an exception thrown *between* iterations (not inside an `addDoc`) is captured and surfaced.
-- Capture the exact Firestore error **code** (`err.code`) — not just the message — so `permission-denied`, `unavailable`, `cancelled`, `failed-precondition`, etc. are all distinguishable.
-- If `user.schoolId` is empty at the moment of import, refuse to start and surface that as the failure reason instead of writing 971 rejected docs.
+### Acceptance test (after the fix)
 
-### 2. New "Import diagnostics" block in `ResultsStep.tsx`
+1. Open the wizard → upload the same Acadience CSV → reach the Results screen.
+2. Click **Test write 1 matched row** → expect `ok: true` with the cleaned payload printed (no `scoreLabel: undefined`, no `rawScore: undefined`).
+3. Re-run the full import → expect ~**971 imported**, **9 unmatched** (1093503), **0 failed to save**, **0 unaccounted**.
+4. Confirm Insights and student/class filters populate from the saved benchmarks.
 
-When `importedRows + skippedRows + unmatchedRows + failedToSaveRows !== totalRows`, render a red diagnostics panel showing:
+### Files I will edit
 
-- The exact arithmetic (`980 = 0 imported + 9 skipped + 9 unmatched + 0 failed → 962 unaccounted`)
-- The first 5 captured `err.code` / `err.message` pairs verbatim
-- The `schoolId` that was used for the writes
-- A button to **retry just one row** so we can read the full Firestore error in the network tab
+- `src/hooks/useImportWizard.ts` — add `removeUndefinedFields`, rebuild `runImport` payload to omit blanks, sanitize before every `addDoc`, same for `probeWrite`.
+- `src/hooks/useBenchmarks.ts` — sanitize the doc passed to `addDoc`, guard missing `schoolId`.
 
-### 3. One-row probe button
+### What I will NOT touch
 
-Add a "Test write 1 row" button on the Results screen (only when `failedToSave === 0` and `imported === 0`). It re-runs `addDoc` for the first matched row only and surfaces the raw error. This nails down whether it's a rules problem, a payload problem, or something else.
-
-## Files I will edit
-
-- `src/hooks/useImportWizard.ts` — tighten counters, add hard assertions, capture `err.code`, add `probeWrite()` method
-- `src/types/importWizard.ts` — add `attemptedRows`, `accountedFor`, `lastErrorCode` to `ImportResult`
-- `src/components/benchmarks/ResultsStep.tsx` — render the diagnostics panel + probe button
-
-## What I will NOT change yet
-
-- Firestore rules — until we have proof of the failure mode, changing rules is guessing.
-- The matching logic — your matching is working (971 of 980 matched correctly).
-- The student/insight filters — those will start working as soon as benchmarks actually save. Let's fix the import first, then verify the dashboard.
-
-## After you re-run
-
-You'll see one of three things in the new diagnostics panel:
-
-1. **`PERMISSION_DENIED` on every row** → I'll fix the `schoolId` race or rules mismatch immediately.
-2. **`UNAVAILABLE` / `DEADLINE_EXCEEDED`** → batched writes + retry logic (Firestore can't handle 971 sequential `addDoc` calls in flaky network conditions).
-3. **`accountedFor` math is correct but `failedToSave: 971`** → we get the real error message and fix the payload.
-
-Approve and I'll ship the diagnostics; first re-run will tell us exactly what to fix.
+- Student matching (working — only the 9 known-bad 1093503 rows fail to match).
+- Firestore rules.
+- CSV column mapping or preset detection.

@@ -18,6 +18,13 @@ import type {
 } from '@/types/importWizard';
 import { WizardStep as WS } from '@/types/importWizard';
 
+// Firestore rejects undefined values. Strip them from any payload before addDoc.
+function removeUndefinedFields<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as Partial<T>;
+}
+
 export interface WizardState {
   step: WizardStep;
   source: ImportSource | null;
