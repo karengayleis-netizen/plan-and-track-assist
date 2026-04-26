@@ -84,7 +84,7 @@ export function MarkbookTab() {
               <SelectContent>
                 {students.map(student => (
                   <SelectItem key={student.id} value={student.id}>
-                    {student.studentNumber} - {student.initials || student.firstName}
+                    {student.initials || '—'} · {student.homeroom} · #{(student.studentNumber || '').slice(-3)}
                   </SelectItem>
                 ))}
               </SelectContent>

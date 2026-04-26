@@ -64,19 +64,35 @@ export function useStudents() {
   };
 
   const addStudent = async (student: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>) => {
-    // Validate input data
-    const validation = validateData(StudentSchema, student);
+    if (!user?.schoolId) {
+      throw new Error('No schoolId available — cannot add student');
+    }
+    const payload = {
+      studentNumber: String(student.studentNumber ?? '').trim().replace(/\.0$/, ''),
+      initials: (student.initials ?? '').trim(),
+      homeroom: (student.homeroom ?? '').trim(),
+      grade: String(student.grade ?? '').trim(),
+      schoolId: user.schoolId,
+      active: student.active ?? true,
+      isFocusStudent: student.isFocusStudent ?? false,
+      isHighNeed: student.isHighNeed ?? false,
+      gender: student.gender ?? '',
+      tags: student.tags ?? [],
+    };
+
+    const validation = validateData(StudentSchema, payload);
     if (!validation.success) {
       const errorMsg = 'error' in validation ? validation.error : 'Validation failed';
       setError(errorMsg);
       throw new Error(errorMsg);
     }
 
-    // Check for duplicate stableStudentId within the school
-    const normalizedId = validation.data.stableStudentId.trim();
-    const duplicate = students.find(s => s.stableStudentId === normalizedId);
+    // Upsert-by-studentNumber within this school.
+    const duplicate = students.find(
+      s => s.studentNumber === validation.data.studentNumber && s.schoolId === user.schoolId,
+    );
     if (duplicate) {
-      const errorMsg = `A student with stable ID "${normalizedId}" already exists`;
+      const errorMsg = `A student with number "${validation.data.studentNumber}" already exists`;
       setError(errorMsg);
       throw new Error(errorMsg);
     }
@@ -84,8 +100,6 @@ export function useStudents() {
     try {
       const docRef = await addDoc(collection(db, 'students'), {
         ...validation.data,
-        stableStudentId: normalizedId,
-        schoolId: user?.schoolId, // Associate with user's school
         createdAt: new Date(),
         updatedAt: new Date(),
       });

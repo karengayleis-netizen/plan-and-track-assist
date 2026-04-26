@@ -1,27 +1,19 @@
 import { z } from 'zod';
 import { GRADES, SUBJECTS, ASSESSMENT_TYPES } from '@/types';
 
-// Student validation schema
+// Student validation schema (new identity model: studentNumber-only)
 export const StudentSchema = z.object({
-  stableStudentId: z.string().min(1, 'Stable student ID is required').max(50, 'Stable student ID must be 50 characters or less')
+  studentNumber: z.string().min(1, 'Student number is required').max(50, 'Student number must be 50 characters or less')
     .transform(v => v.trim()),
-  studentNumber: z.string().min(1, 'Student number is required').max(20, 'Student number must be 20 characters or less'),
-  externalStudentNumber: z.string().max(50, 'External student number must be 50 characters or less').optional(),
   initials: z.string().max(10, 'Initials must be 10 characters or less').default(''),
-  firstName: z.string().max(50, 'First name must be 50 characters or less').default(''),
-  lastName: z.string().max(50, 'Last name must be 50 characters or less').default(''),
-  grade: z.string().min(1, 'Grade is required'),
-  homeroom: z.string().max(20, 'Homeroom must be 20 characters or less').default(''),
-  seat: z.string().max(10, 'Seat must be 10 characters or less').optional(),
-  yearGroup: z.string().max(20, 'Year group must be 20 characters or less').default(''),
-  className: z.string().max(50, 'Class name must be 50 characters or less').default(''),
-  sen: z.boolean().default(false),
-  pupilPremium: z.boolean().default(false),
-  eal: z.boolean().default(false),
-  isFocusStudent: z.boolean().default(false),
-  isHighNeed: z.boolean().default(false),
+  homeroom: z.string().min(1, 'Homeroom is required').max(20, 'Homeroom must be 20 characters or less'),
+  grade: z.string().min(1, 'Grade is required').max(10),
+  schoolId: z.string().min(1, 'schoolId is required').max(128),
+  active: z.boolean().default(true),
+  isFocusStudent: z.boolean().default(false).optional(),
+  isHighNeed: z.boolean().default(false).optional(),
   gender: z.string().max(10, 'Gender must be 10 characters or less').optional(),
-  tags: z.array(z.string().max(30)).max(20, 'Too many tags').default([]),
+  tags: z.array(z.string().max(30)).max(20, 'Too many tags').default([]).optional(),
 });
 
 export type ValidatedStudent = z.infer<typeof StudentSchema>;

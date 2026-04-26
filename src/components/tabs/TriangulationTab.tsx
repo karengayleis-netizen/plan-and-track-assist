@@ -46,7 +46,7 @@ export function TriangulationTab() {
 
   const filteredStudents = students.filter(student => {
     const matchesSearch = student.studentNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.homeroom?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       student.initials?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterMode === 'all' || student.isFocusStudent;
     return matchesSearch && matchesFilter;
