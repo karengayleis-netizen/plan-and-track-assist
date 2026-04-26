@@ -23,6 +23,7 @@ import { BulkActionsBar } from '@/components/students/BulkActionsBar';
 import { TagInput } from '@/components/ui/tag-input';
 import { Badge } from '@/components/ui/badge';
 import { parseBackfillFile, buildMatchPlan, type MatchPlan, type BackfillRow, type DetectedColumns } from '@/lib/backfillParser';
+import { ServerBackfillPanel } from '@/components/students/ServerBackfillPanel';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
