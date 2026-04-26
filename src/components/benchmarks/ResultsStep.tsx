@@ -12,7 +12,15 @@ interface ResultsStepProps {
   errorSummary: ErrorSummary;
   onDownloadErrors: () => void;
   onSaveTemplate: () => void;
-  onProbeWrite?: () => Promise<{ ok: boolean; code?: string; message?: string }>;
+  onProbeWrite?: () => Promise<{
+    ok: boolean;
+    code?: string;
+    message?: string;
+    rowNumber?: number;
+    studentNumber?: string;
+    schoolIdUsed?: string;
+    payload?: Record<string, unknown>;
+  }>;
   onClose: () => void;
 }
 
