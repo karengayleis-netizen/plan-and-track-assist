@@ -15,7 +15,8 @@ interface ResultsStepProps {
 }
 
 export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSaveTemplate, onClose }: ResultsStepProps) {
-  const hasErrors = result.skippedRows > 0 || result.unmatchedRows > 0;
+  const failedToSave = result.failedToSaveRows ?? result.errorRows ?? 0;
+  const hasErrors = result.skippedRows > 0 || result.unmatchedRows > 0 || failedToSave > 0;
 
   return (
     <div className="space-y-5">
@@ -30,12 +31,36 @@ export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSa
         </h3>
       </div>
 
+      {failedToSave > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <XCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-destructive">
+                {failedToSave} row{failedToSave !== 1 ? 's' : ''} matched a student but failed to save
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                The database rejected these writes. First error{result.writeErrors && result.writeErrors.length > 1 ? 's' : ''} below — share with support if you need help.
+              </p>
+            </div>
+          </div>
+          {result.writeErrors && result.writeErrors.length > 0 && (
+            <ul className="text-xs font-mono bg-background/60 rounded p-2 space-y-1 ml-6 list-disc list-inside">
+              {result.writeErrors.map((e, i) => (
+                <li key={i} className="break-words">{e}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         {[
           { label: 'Total Rows', value: result.totalRows },
           { label: 'Imported', value: result.importedRows, color: 'text-green-600' },
-          { label: 'Skipped', value: result.skippedRows, color: 'text-yellow-600' },
+          { label: 'Skipped (validation)', value: result.skippedRows, color: 'text-yellow-600' },
           { label: 'Unmatched', value: result.unmatchedRows, color: 'text-muted-foreground' },
+          { label: 'Failed to Save', value: failedToSave, color: failedToSave > 0 ? 'text-destructive' : 'text-muted-foreground' },
         ].map(s => (
           <div key={s.label} className="p-3 rounded-lg bg-muted/30 text-center">
             <p className={`text-xl font-bold ${s.color || 'text-foreground'}`}>{s.value}</p>
