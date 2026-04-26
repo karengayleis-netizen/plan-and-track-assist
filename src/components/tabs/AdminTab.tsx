@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -78,20 +78,65 @@ export function AdminTab() {
     fetchStaffMembers();
   }, [fetchStaffMembers]);
 
-  // Calculate stats
-  const totalStudents = students.length;
-  const totalBenchmarks = benchmarks.length;
+  // ── Whole-School filters (default to "all" so admin sees everything) ──
+  const [adminGradeFilter, setAdminGradeFilter] = useState('all');
+  const [adminHomeroomFilter, setAdminHomeroomFilter] = useState('all');
+  const [adminMeasureFilter, setAdminMeasureFilter] = useState('all');
+  const [adminWindowFilter, setAdminWindowFilter] = useState('all');
+
+  const availableHomerooms = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach(s => s.homeroom && set.add(s.homeroom));
+    return Array.from(set).sort();
+  }, [students]);
+
+  const availableMeasures = useMemo(() => {
+    const set = new Set<string>();
+    benchmarks.forEach(b => {
+      const t = b.assessmentType || b.assessmentName;
+      if (t) set.add(t);
+    });
+    return Array.from(set).sort();
+  }, [benchmarks]);
+
+  const availableWindows = useMemo(() => {
+    const set = new Set<string>();
+    benchmarks.forEach(b => {
+      const w = (b.benchmarkWindow || b.term || '').trim();
+      if (w) set.add(w);
+    });
+    return Array.from(set).sort();
+  }, [benchmarks]);
+
+  const filteredStudents = useMemo(() => students.filter(s => {
+    if (adminGradeFilter !== 'all' && String(s.grade) !== adminGradeFilter) return false;
+    if (adminHomeroomFilter !== 'all' && s.homeroom !== adminHomeroomFilter) return false;
+    return true;
+  }), [students, adminGradeFilter, adminHomeroomFilter]);
+
+  const filteredStudentIdSet = useMemo(() => new Set(filteredStudents.map(s => s.id)), [filteredStudents]);
+
+  const filteredBenchmarks = useMemo(() => benchmarks.filter(b => {
+    if (!filteredStudentIdSet.has(b.studentId)) return false;
+    if (adminMeasureFilter !== 'all' && (b.assessmentType || b.assessmentName) !== adminMeasureFilter) return false;
+    if (adminWindowFilter !== 'all' && (b.benchmarkWindow || b.term || '').trim() !== adminWindowFilter) return false;
+    return true;
+  }), [benchmarks, filteredStudentIdSet, adminMeasureFilter, adminWindowFilter]);
+
+  // Calculate stats (driven by filtered set; defaults = whole school)
+  const totalStudents = filteredStudents.length;
+  const totalBenchmarks = filteredBenchmarks.length;
 
   // Risk derived from Acadience scoreLabel + manual flag (not just manual flag).
   const studentRisk: Record<string, RiskLevel> = {};
-  students.forEach(s => { studentRisk[s.id] = getStudentRiskLevel(s, benchmarks); });
-  const atRiskCount = students.filter(s =>
+  filteredStudents.forEach(s => { studentRisk[s.id] = getStudentRiskLevel(s, filteredBenchmarks); });
+  const atRiskCount = filteredStudents.filter(s =>
     studentRisk[s.id] === 'well-below' || studentRisk[s.id] === 'below'
   ).length;
 
   // Avg data/student should be over ASSESSED students, not whole roster (K-2 only data
   // would otherwise be diluted by grades 3-8 with zero benchmarks).
-  const assessedStudentIds = new Set(benchmarks.map(b => b.studentId));
+  const assessedStudentIds = new Set(filteredBenchmarks.map(b => b.studentId));
   const assessedCount = assessedStudentIds.size;
   const avgDataPerStudent = assessedCount > 0
     ? (totalBenchmarks / assessedCount).toFixed(1)
@@ -99,15 +144,19 @@ export function AdminTab() {
 
   // Risk distribution by grade for Acadience-style stacked chart.
   const riskByGrade = GRADES.map(grade => {
-    const gs = students.filter(s => s.grade === grade);
-    const counts = { 'well-below': 0, 'below': 0, 'at-or-above': 0, 'well-above': 0, 'unknown': 0 } as Record<RiskLevel, number>;
+    const gs = filteredStudents.filter(s => s.grade === grade);
+    const counts = { 'well-below': 0, 'below': 0, 'approaching': 0, 'at-or-above': 0, 'well-above': 0, 'unknown': 0 } as Record<RiskLevel, number>;
     gs.forEach(s => { counts[studentRisk[s.id]]++; });
     return {
-      grade: `Gr ${formatGradeDisplay(Number(grade))}`,
+      grade: `Gr ${formatGradeDisplay(grade === 'K' ? 0 : Number(grade))}`,
       ...counts,
       total: gs.length,
     };
-  }).filter(r => r.total > 0 && (r['well-below'] + r['below'] + r['at-or-above'] + r['well-above']) > 0);
+  }).filter(r => r.total > 0 && (r['well-below'] + r['below'] + r['approaching'] + r['at-or-above'] + r['well-above']) > 0);
+
+  // Diagnostic data
+  const uniqueAssessedAll = new Set(benchmarks.map(b => b.studentId)).size;
+  const isFiltered = adminGradeFilter !== 'all' || adminHomeroomFilter !== 'all' || adminMeasureFilter !== 'all' || adminWindowFilter !== 'all';
 
   // Grade analytics — now driven by derived risk.
   const gradeAnalytics = GRADES.map(grade => {
