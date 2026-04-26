@@ -319,6 +319,15 @@ export function useImportWizard(onComplete?: () => void) {
           ? row.parsedDate
           : new Date();
 
+        // Build payload: include optional fields ONLY when they have a real value.
+        // Acadience-specific: rawScore falls back to score; scoreLabel comes from Status if present.
+        const statusVal = getVal('status');
+        const rawScoreVal = getVal('rawScore') || (row.score ? String(row.score) : '');
+        const benchmarkWindowVal = getVal('benchmarkWindow');
+        const strandVal = getVal('strand');
+        const notesVal = getVal('notes');
+        const refVal = getVal('ref');
+
         const rawPayload: Record<string, unknown> = {
           schoolId: schoolIdUsed,
           studentId: row.matchedStudentId,
@@ -329,20 +338,10 @@ export function useImportWizard(onComplete?: () => void) {
           assessmentType: row.assessmentType,
           assessmentName: row.assessmentType,
           score: row.score ?? '',
-          scoreLabel: getVal('status') || null,
-          rawScore: getVal('rawScore') || null,
           maxScore: 100,
-          percent: percentVal ?? null,
           percentage: percentVal || 0,
-          benchmarkWindow: getVal('benchmarkWindow') || null,
-          strand: getVal('strand') || null,
-          classCode: classCode || null,
           subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
           date: safeDate,
-          term: getVal('benchmarkWindow') || '',
-          notes: getVal('notes') || null,
-          ref: getVal('ref') || null,
-          reference: getVal('ref') || null,
           importedAt: new Date(),
           importedBy: user.uid,
           rawImportMeta: {
@@ -351,10 +350,28 @@ export function useImportWizard(onComplete?: () => void) {
           },
           createdAt: new Date(),
         };
-        // Firestore rejects `undefined` — strip any undefined values defensively.
-        const payload = Object.fromEntries(
-          Object.entries(rawPayload).filter(([, v]) => v !== undefined)
-        );
+        // Only include optional fields when they have a real value — never write undefined or empty.
+        if (statusVal) rawPayload.scoreLabel = statusVal;
+        if (rawScoreVal) rawPayload.rawScore = rawScoreVal;
+        if (percentVal !== undefined && !isNaN(percentVal)) rawPayload.percent = percentVal;
+        if (benchmarkWindowVal) {
+          rawPayload.benchmarkWindow = benchmarkWindowVal;
+          rawPayload.term = benchmarkWindowVal;
+        }
+        if (strandVal) rawPayload.strand = strandVal;
+        if (classCode) rawPayload.classCode = classCode;
+        if (notesVal) rawPayload.notes = notesVal;
+        if (refVal) {
+          rawPayload.ref = refVal;
+          rawPayload.reference = refVal;
+        }
+
+        // Defensive: strip any surviving undefined keys.
+        const payload = removeUndefinedFields(rawPayload);
+        const stillUndefined = Object.entries(payload).filter(([, v]) => v === undefined);
+        if (stillUndefined.length) {
+          console.error('[ImportWizard] undefined survived sanitization', stillUndefined.map(([k]) => k));
+        }
 
         try {
           await addDoc(collection(db, 'benchmarks'), payload);
