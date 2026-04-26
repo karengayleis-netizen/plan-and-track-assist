@@ -318,6 +318,32 @@ export function InsightsTab() {
         </div>
       </div>
 
+      {/* ── Diagnostic Card (temporary) ── */}
+      <div className="border border-dashed border-amber-400/60 rounded-lg p-4 bg-amber-50/40 dark:bg-amber-950/20 text-xs">
+        <div className="font-medium text-amber-800 dark:text-amber-300 mb-2">🔍 Diagnostic (temporary)</div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 font-mono">
+          <div>Benchmark docs loaded: <strong>{benchmarks.length}</strong></div>
+          <div>Unique students with benchmarks: <strong>{new Set(benchmarks.map(b => b.studentId)).size}</strong></div>
+          <div>Reading: <strong>{(gradeFilter !== 'all' || homeroomFilter !== 'all' || measureFilter !== 'auto') ? 'FILTERED' : 'WHOLE SCHOOL'}</strong></div>
+          <div>In view — students: <strong>{filteredStudents.length}</strong></div>
+          <div>In view — benchmarks: <strong>{filteredBenchmarks.length}</strong></div>
+          <div>Filters: g=<strong>{gradeFilter}</strong> hr=<strong>{homeroomFilter}</strong> m=<strong>{measureFilter}</strong></div>
+        </div>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-amber-800 dark:text-amber-300">First 5 benchmark records</summary>
+          <pre className="mt-2 p-2 bg-background/80 rounded overflow-x-auto text-[10px] leading-tight">
+{JSON.stringify(benchmarks.slice(0, 5).map(b => ({
+  studentId: b.studentId,
+  measure: b.assessmentType || b.assessmentName,
+  score: b.score,
+  scoreLabel: b.scoreLabel,
+  window: b.benchmarkWindow || b.term,
+  date: b.date instanceof Date ? b.date.toISOString().slice(0,10) : String(b.date),
+})), null, 2)}
+          </pre>
+        </details>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard title="Total Students" value={totalStudents} icon={Users} variant="primary" />
