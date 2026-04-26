@@ -158,12 +158,13 @@ export function AdminTab() {
   const uniqueAssessedAll = new Set(benchmarks.map(b => b.studentId)).size;
   const isFiltered = adminGradeFilter !== 'all' || adminHomeroomFilter !== 'all' || adminMeasureFilter !== 'all' || adminWindowFilter !== 'all';
 
-  // Grade analytics — now driven by derived risk.
+  // Grade analytics — computed against full roster + all benchmarks (not filter-dependent).
   const gradeAnalytics = GRADES.map(grade => {
     const gradeStudents = students.filter(s => s.grade === grade);
-    const atRisk = gradeStudents.filter(s =>
-      studentRisk[s.id] === 'well-below' || studentRisk[s.id] === 'below'
-    ).length;
+    const atRisk = gradeStudents.filter(s => {
+      const lvl = getStudentRiskLevel(s, benchmarks);
+      return lvl === 'well-below' || lvl === 'below';
+    }).length;
     const stable = gradeStudents.length - atRisk;
     return {
       grade,
