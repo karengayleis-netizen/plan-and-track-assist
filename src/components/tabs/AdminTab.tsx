@@ -81,13 +81,40 @@ export function AdminTab() {
   // Calculate stats
   const totalStudents = students.length;
   const totalBenchmarks = benchmarks.length;
-  const atRiskCount = students.filter(s => s.isHighNeed).length;
-  const avgDataPerStudent = totalStudents > 0 ? (totalBenchmarks / totalStudents).toFixed(1) : '0';
 
-  // Grade analytics
+  // Risk derived from Acadience scoreLabel + manual flag (not just manual flag).
+  const studentRisk: Record<string, RiskLevel> = {};
+  students.forEach(s => { studentRisk[s.id] = getStudentRiskLevel(s, benchmarks); });
+  const atRiskCount = students.filter(s =>
+    studentRisk[s.id] === 'well-below' || studentRisk[s.id] === 'below'
+  ).length;
+
+  // Avg data/student should be over ASSESSED students, not whole roster (K-2 only data
+  // would otherwise be diluted by grades 3-8 with zero benchmarks).
+  const assessedStudentIds = new Set(benchmarks.map(b => b.studentId));
+  const assessedCount = assessedStudentIds.size;
+  const avgDataPerStudent = assessedCount > 0
+    ? (totalBenchmarks / assessedCount).toFixed(1)
+    : '0';
+
+  // Risk distribution by grade for Acadience-style stacked chart.
+  const riskByGrade = GRADES.map(grade => {
+    const gs = students.filter(s => s.grade === grade);
+    const counts = { 'well-below': 0, 'below': 0, 'at-or-above': 0, 'well-above': 0, 'unknown': 0 } as Record<RiskLevel, number>;
+    gs.forEach(s => { counts[studentRisk[s.id]]++; });
+    return {
+      grade: `Gr ${formatGradeDisplay(Number(grade))}`,
+      ...counts,
+      total: gs.length,
+    };
+  }).filter(r => r.total > 0 && (r['well-below'] + r['below'] + r['at-or-above'] + r['well-above']) > 0);
+
+  // Grade analytics — now driven by derived risk.
   const gradeAnalytics = GRADES.map(grade => {
     const gradeStudents = students.filter(s => s.grade === grade);
-    const atRisk = gradeStudents.filter(s => s.isHighNeed).length;
+    const atRisk = gradeStudents.filter(s =>
+      studentRisk[s.id] === 'well-below' || studentRisk[s.id] === 'below'
+    ).length;
     const stable = gradeStudents.length - atRisk;
     return {
       grade,
