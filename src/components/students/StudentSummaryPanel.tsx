@@ -79,10 +79,11 @@ export function StudentSummaryPanel({ student, open, onClose, benchmarks, markbo
         <SheetHeader className="p-6 pb-4">
           <div className="flex items-start justify-between">
             <div>
-              <SheetTitle className="font-mono text-lg">{student.studentNumber}</SheetTitle>
+              <SheetTitle className="text-lg">
+                {student.initials || '—'} · {student.homeroom} · #{(student.studentNumber || '').slice(-3)}
+              </SheetTitle>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {student.initials && <span className="mr-2">{student.initials}</span>}
-                Grade {student.grade} · {student.homeroom}
+                Grade {student.grade}
               </p>
             </div>
           </div>

@@ -131,7 +131,7 @@ export interface IdDiagnosis {
   rawId: string;
   normalized: string;
   status: IdClassification;
-  matchedField?: 'externalStudentNumber' | 'studentNumber' | 'stableStudentId';
+  matchedField?: 'studentNumber';
   docCount: number;
   docSchoolIds: string[];
 }

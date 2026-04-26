@@ -36,20 +36,16 @@ export function GlobalSearch({ onSelectStudent, onNavigateTab }: GlobalSearchPro
     // Search students
     for (const s of students) {
       if (matches.length >= 8) break;
-      const fields = [
-        s.initials,
-        s.studentNumber,
-        s.stableStudentId,
-        s.firstName,
-        s.lastName,
-      ].filter(Boolean);
+      if (s.active === false) continue;
+      const fields = [s.initials, s.studentNumber, s.homeroom].filter(Boolean);
 
       if (fields.some(f => f!.toLowerCase().includes(q))) {
+        const last3 = (s.studentNumber || '').slice(-3);
         matches.push({
           type: 'student',
           id: s.id,
-          title: `${s.studentNumber}${s.initials ? ` (${s.initials})` : ''}`,
-          subtitle: `Grade ${s.grade} · ${s.homeroom}`,
+          title: `${s.initials || '—'} · ${s.homeroom} · #${last3}`,
+          subtitle: `Grade ${s.grade}`,
           data: s,
         });
       }

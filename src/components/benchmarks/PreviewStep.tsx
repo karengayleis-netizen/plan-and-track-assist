@@ -13,7 +13,7 @@ interface PreviewStepProps {
   onBack: () => void;
   studentsLoading?: boolean;
   classCodeMapped?: boolean;
-  students?: Array<{ externalStudentNumber?: string; stableStudentId?: string; studentNumber?: string }>;
+  students?: Array<{ studentNumber?: string }>;
   identifierColumnIndex?: number;
   idDiagnosis?: ImportIdDiagnosis;
 }

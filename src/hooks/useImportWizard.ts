@@ -145,37 +145,22 @@ export function useImportWizard(onComplete?: () => void) {
       return;
     }
 
-    // Build rows + match students by studentNumber
+    // Build rows + match students by board studentNumber ONLY (active students only).
     const rows = buildImportRows(state.rawRows, state.columnMapping);
 
-    // Normalize identifier: stringify, trim, strip trailing ".0", strip leading zeros for pure-numeric
-    const normalize = (v: unknown): string => {
-      const s = String(v ?? '').trim().replace(/\.0+$/, '');
-      if (!s) return '';
-      if (/^\d+$/.test(s)) return s.replace(/^0+/, '') || '0';
-      return s.toLowerCase();
-    };
+    const normalize = (v: unknown): string =>
+      String(v ?? '').trim().replace(/\.0$/, '');
 
-    // Build indexed lookup over roster: ext → stable → studentNumber
-    const byExternal = new Map<string, typeof students[number]>();
-    const byStable = new Map<string, typeof students[number]>();
     const byStudentNumber = new Map<string, typeof students[number]>();
     for (const s of students) {
-      const ext = normalize(s.externalStudentNumber);
-      const stb = normalize(s.stableStudentId);
+      if (s.active === false) continue;
       const num = normalize(s.studentNumber);
-      if (ext && !byExternal.has(ext)) byExternal.set(ext, s);
-      if (stb && !byStable.has(stb)) byStable.set(stb, s);
       if (num && !byStudentNumber.has(num)) byStudentNumber.set(num, s);
     }
 
-    console.log('[ImportWizard] Roster indexed for matching:', {
-      rosterCount: students.length,
-      byExternalCount: byExternal.size,
-      byStableCount: byStable.size,
-      byStudentNumberCount: byStudentNumber.size,
-      sampleExternal: Array.from(byExternal.keys()).slice(0, 5),
-      sampleStable: Array.from(byStable.keys()).slice(0, 5),
+    console.log('[ImportWizard] Roster indexed for matching (studentNumber-only):', {
+      activeRosterCount: byStudentNumber.size,
+      totalRosterDocs: students.length,
       sampleStudentNumber: Array.from(byStudentNumber.keys()).slice(0, 5),
     });
 
@@ -186,24 +171,12 @@ export function useImportWizard(onComplete?: () => void) {
       const rawIdentifier = identifierIdx >= 0 ? row.rawValues[identifierIdx] : '';
       const normIdentifier = normalize(rawIdentifier);
 
-      // Extract CSV homeroom if mapped
       const classCodeIdx = state.columnMapping.classCode;
       const csvHomeroom = classCodeIdx >= 0 ? row.rawValues[classCodeIdx]?.trim() || '' : '';
 
       if (!normIdentifier) return { ...row, csvHomeroom: csvHomeroom || undefined };
 
-      // 3-tier match: externalStudentNumber → studentNumber → stableStudentId
-      let matchedField: 'externalStudentNumber' | 'studentNumber' | 'stableStudentId' | null = null;
-      let student = byExternal.get(normIdentifier);
-      if (student) matchedField = 'externalStudentNumber';
-      if (!student) {
-        student = byStudentNumber.get(normIdentifier);
-        if (student) matchedField = 'studentNumber';
-      }
-      if (!student) {
-        student = byStable.get(normIdentifier);
-        if (student) matchedField = 'stableStudentId';
-      }
+      const student = byStudentNumber.get(normIdentifier);
 
       if (!student && firstMissLogged < 5) {
         firstMissLogged++;
@@ -211,18 +184,6 @@ export function useImportWizard(onComplete?: () => void) {
           rawIdentifier: String(rawIdentifier ?? ''),
           normalized: normIdentifier,
           csvHomeroom,
-          checked: ['externalStudentNumber', 'studentNumber', 'stableStudentId'],
-          inExternal: byExternal.has(normIdentifier),
-          inStudentNumber: byStudentNumber.has(normIdentifier),
-          inStable: byStable.has(normIdentifier),
-        });
-      } else if (student && firstMissLogged === 0 && row.rowIndex < 3) {
-        console.log('[ImportWizard] Match for row', row.rowIndex, {
-          rawIdentifier: String(rawIdentifier ?? ''),
-          normalized: normIdentifier,
-          matchedField,
-          studentId: student.id,
-          studentHomeroom: student.homeroom,
         });
       }
 
@@ -238,7 +199,7 @@ export function useImportWizard(onComplete?: () => void) {
           ...row,
           matchedStudentId: student.id,
           matchedStudentNumber: student.studentNumber,
-          matchedStudentInitials: student.initials || `${student.firstName?.[0] || ''}${student.lastName?.[0] || ''}`,
+          matchedStudentInitials: student.initials || '',
           csvHomeroom: csvHomeroom || undefined,
           matchedHomeroom: matchedHomeroom || undefined,
           status: row.status === 'error' ? 'error' as const : (homeroomMismatch ? 'warning' as const : row.status),
@@ -260,33 +221,7 @@ export function useImportWizard(onComplete?: () => void) {
       step: WS.PreviewValidate,
       idDiagnosis: { ran: false, loading: false, results: [] },
     }));
-
-    // Fire-and-forget admin diagnosis on unmatched IDs (cross-school visibility)
-    const idCol = state.columnMapping.studentIdentifier;
-    const unmatchedIds = Array.from(new Set(
-      matched
-        .filter(r => !r.matchedStudentId)
-        .map(r => String(r.rawValues?.[idCol] ?? '').trim())
-        .filter(Boolean)
-    )).slice(0, 500);
-
-    if (unmatchedIds.length > 0 && user?.role === 'admin') {
-      setState(s => ({ ...s, idDiagnosis: { ran: true, loading: true, results: [] } }));
-      const callable = httpsCallable(functions, 'diagnoseImportStudentIds');
-      callable({ ids: unmatchedIds })
-        .then(res => {
-          const data = res.data as Omit<ImportIdDiagnosis, 'ran' | 'loading'>;
-          setState(s => ({ ...s, idDiagnosis: { ran: true, loading: false, ...data } }));
-        })
-        .catch(err => {
-          console.warn('[ImportWizard] diagnoseImportStudentIds failed:', err);
-          setState(s => ({
-            ...s,
-            idDiagnosis: { ran: true, loading: false, results: [], error: err?.message || 'Diagnosis call failed' },
-          }));
-        });
-    }
-  }, [state.rawRows, state.columnMapping, students, studentsLoading, user]);
+  }, [state.rawRows, state.columnMapping, students, studentsLoading]);
 
   // Step 4 → 5 Import
   const runImport = useCallback(async () => {

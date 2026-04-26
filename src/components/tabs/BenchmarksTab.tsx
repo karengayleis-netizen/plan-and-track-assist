@@ -79,12 +79,11 @@ export function BenchmarksTab() {
 
       const [identifier, type, scoreVal, dateVal, notesVal, refVal] = cols;
       
-      // Match by stableStudentId first, then fallback to studentNumber
+      // Match by board studentNumber only (active students)
       let student = null;
       if (identifier) {
-        const trimmed = identifier.trim();
-        student = students.find(s => s.stableStudentId === trimmed)
-          || students.find(s => s.studentNumber === trimmed);
+        const trimmed = String(identifier ?? '').trim().replace(/\.0$/, '');
+        student = students.find(s => s.active !== false && String(s.studentNumber ?? '').trim().replace(/\.0$/, '') === trimmed);
       }
       
       if (!student) { errorCount++; continue; }
@@ -167,9 +166,9 @@ export function BenchmarksTab() {
                 <SelectValue placeholder="-- Choose Student --" />
               </SelectTrigger>
               <SelectContent>
-                {students.map(student => (
+                {students.filter(s => s.active !== false).map(student => (
                   <SelectItem key={student.id} value={student.id}>
-                    {student.studentNumber} - {student.initials || student.firstName}
+                    {student.initials || '—'} · {student.homeroom} · #{(student.studentNumber || '').slice(-3)}
                   </SelectItem>
                 ))}
               </SelectContent>
