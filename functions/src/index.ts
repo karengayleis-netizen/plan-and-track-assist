@@ -1192,9 +1192,9 @@ export const replaceSchoolRoster = functions.https.onCall(
 
     // Helper to commit batched writes (Firestore limit 500 ops per batch)
     type Op =
-      | { type: "set"; ref: FirebaseFirestore.DocumentReference; data: any }
-      | { type: "update"; ref: FirebaseFirestore.DocumentReference; data: any }
-      | { type: "delete"; ref: FirebaseFirestore.DocumentReference };
+      | { type: "set"; ref: admin.firestore.DocumentReference; data: any }
+      | { type: "update"; ref: admin.firestore.DocumentReference; data: any }
+      | { type: "delete"; ref: admin.firestore.DocumentReference };
     const ops: Op[] = [];
 
     async function flush() {
