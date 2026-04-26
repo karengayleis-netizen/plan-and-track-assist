@@ -18,6 +18,8 @@ export interface Student {
   stableStudentId: string;
   studentNumber: string;
   externalStudentNumber?: string;
+  /** Human-readable coded ID like "4F-14", preserved when migrating to board Student Number. */
+  displayCode?: string;
   initials: string;
   firstName: string;
   lastName: string;
