@@ -16,6 +16,7 @@ import { collection, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { freshnessLabel, isStale } from '@/lib/freshness';
+import { formatStudentDisplay } from '@/lib/studentDisplay';
 
 type EvidenceType = 'observation' | 'conversation' | 'product';
 
@@ -293,7 +294,7 @@ export function TriangulationTab() {
               <SelectContent>
                 {students.map(s => (
                   <SelectItem key={s.id} value={s.id}>
-                    {s.studentNumber} {s.initials ? `(${s.initials})` : ''}
+                    {formatStudentDisplay(s)}
                   </SelectItem>
                 ))}
               </SelectContent>
