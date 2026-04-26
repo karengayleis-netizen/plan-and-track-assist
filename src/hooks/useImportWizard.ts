@@ -312,7 +312,7 @@ export function useImportWizard(onComplete?: () => void) {
           ? row.parsedDate
           : new Date();
 
-        const payload = {
+        const rawPayload: Record<string, unknown> = {
           schoolId: schoolIdUsed,
           studentId: row.matchedStudentId,
           studentNumber: row.matchedStudentNumber || '',
@@ -321,21 +321,21 @@ export function useImportWizard(onComplete?: () => void) {
           assessmentFamily: preset.assessmentFamily,
           assessmentType: row.assessmentType,
           assessmentName: row.assessmentType,
-          score: row.score,
-          scoreLabel: getVal('status') || undefined,
-          rawScore: getVal('rawScore') || undefined,
+          score: row.score ?? '',
+          scoreLabel: getVal('status') || null,
+          rawScore: getVal('rawScore') || null,
           maxScore: 100,
-          percent: percentVal,
+          percent: percentVal ?? null,
           percentage: percentVal || 0,
-          benchmarkWindow: getVal('benchmarkWindow') || undefined,
-          strand: getVal('strand') || undefined,
-          classCode: classCode || undefined,
+          benchmarkWindow: getVal('benchmarkWindow') || null,
+          strand: getVal('strand') || null,
+          classCode: classCode || null,
           subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
           date: safeDate,
           term: getVal('benchmarkWindow') || '',
-          notes: getVal('notes') || undefined,
-          ref: getVal('ref') || undefined,
-          reference: getVal('ref') || undefined,
+          notes: getVal('notes') || null,
+          ref: getVal('ref') || null,
+          reference: getVal('ref') || null,
           importedAt: new Date(),
           importedBy: user.uid,
           rawImportMeta: {
@@ -344,6 +344,10 @@ export function useImportWizard(onComplete?: () => void) {
           },
           createdAt: new Date(),
         };
+        // Firestore rejects `undefined` — strip any undefined values defensively.
+        const payload = Object.fromEntries(
+          Object.entries(rawPayload).filter(([, v]) => v !== undefined)
+        );
 
         try {
           await addDoc(collection(db, 'benchmarks'), payload);
@@ -465,7 +469,7 @@ export function useImportWizard(onComplete?: () => void) {
       ? firstMatched.parsedDate
       : new Date();
 
-    const payload = {
+    const rawProbe: Record<string, unknown> = {
       schoolId: schoolIdUsed,
       studentId: firstMatched.matchedStudentId,
       studentNumber: firstMatched.matchedStudentNumber || '',
@@ -475,15 +479,18 @@ export function useImportWizard(onComplete?: () => void) {
       assessmentType: firstMatched.assessmentType || 'PROBE',
       assessmentName: firstMatched.assessmentType || 'PROBE',
       score: firstMatched.score || '0',
-      scoreLabel: getVal('status') || undefined,
-      benchmarkWindow: getVal('benchmarkWindow') || undefined,
-      classCode: classCode || undefined,
+      scoreLabel: getVal('status') || null,
+      benchmarkWindow: getVal('benchmarkWindow') || null,
+      classCode: classCode || null,
       date: safeDate,
       importedAt: new Date(),
       importedBy: user.uid,
       createdAt: new Date(),
       probe: true,
     };
+    const payload = Object.fromEntries(
+      Object.entries(rawProbe).filter(([, v]) => v !== undefined)
+    );
 
     try {
       await addDoc(collection(db, 'benchmarks'), payload);
