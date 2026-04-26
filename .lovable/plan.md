@@ -1,49 +1,63 @@
-## Goal
+## Problem
 
-Get the 48 missing board numbers (and the 418 unmatched benchmark rows) imported by backfilling `externalStudentNumber` on the existing roster — using the Acadience CSV you just uploaded as the backfill source.
+Four students show `expected ≠ actual` after the backfill ran successfully:
 
-## Why this works
+| Coded ID | Doc ID | Expected | Actual on doc |
+|---|---|---|---|
+| 1AF-7  | zczv996viRquAHpxxyvc | 1057559 | 1020583 |
+| 1AF-13 | b7mKc4bGpP5uU0RWFbq0 | 1058132 | 1027515 |
+| 1BF-6  | CdlP82WK0Y5PWzODIsbU | 1051601 | 1057273 |
+| 1BF-16 | SejuBADMIeMew6syECrv | 1047318 | 1029135 |
 
-Your Acadience CSV already contains the three fields the backfill tool needs:
+All docs exist with `schoolId="folkstone_ps"`, so they're writable. The "value mismatch after write" almost certainly means the backfill matched the CSV row to a *different* doc that shares the same `(initials, homeroom)` or coded-id key — so it wrote the expected value to the wrong student, and this doc was either skipped or overwritten by another row in the same batch. Re-running the same CSV through the matching logic will repeat the same wrong assignment.
 
-- `Student Number` → board number (e.g. `1046969`)
-- `Student Initials` → `J.N.P.`
-- `Class Name` → homeroom (e.g. `12E`)
+## Fix: write by doc ID, no matching
 
-The existing `parseBackfillFile` in `src/lib/backfillParser.ts` already recognizes all three header names as aliases. No code changes required for parsing.
+Add a small admin-only Cloud Function and a UI panel that takes a list of `{docId, expectedExternalNumber}` pairs and writes each value directly to that exact document. This bypasses all initials/homeroom/coded-id resolution and guarantees the right doc gets the right number.
 
-It has no roster-ordinal column, so coded-ID matching is skipped automatically and it falls through to **initials + homeroom** matching — exactly the path that fixes your 111 students missing `externalStudentNumber`.
+## Changes
 
-## Steps
+### 1. New Cloud Function `forceSetExternalStudentNumbers` (`functions/src/index.ts`)
 
-1. **Run the backfill with the Acadience CSV itself**
-   - Students tab → "Server-side board number backfill" panel
-   - Upload `Acadience_Import_Ready_Final_With_Initials_Sheet1.csv`
-   - The callable `backfillExternalStudentNumbers` runs as admin (bypasses rules) and writes `externalStudentNumber` onto every roster student whose initials + homeroom match a row.
+- Admin-only (reuse `assertIsAdmin`).
+- Input: `{ entries: Array<{ docId: string; externalStudentNumber: string }> }`, max 500.
+- For each entry, in a single batched write:
+  - Read `students/{docId}`. If missing → record `notFound`.
+  - If `schoolId` doesn't match caller's `schoolId` → record `wrongSchool` (don't write).
+  - Else `update({ externalStudentNumber, updatedAt: serverTimestamp() })`.
+  - After commit, re-read the doc and confirm `externalStudentNumber === expected`; record `verified` or `verifyMismatch` with the actual value.
+- Return `{ totals, results: [{ docId, action, before, after, actualAfterRead, reason? }] }`.
+- Use `db.runTransaction` per entry (or batched commit + post-commit re-read) so we get a true round-trip verification, which is what surfaced the original problem.
 
-2. **Read the totals badges** that appear after it finishes:
-   - `Updated` / `Repaired schoolId + updated` → board numbers written ✅
-   - `Already correct` → the 141 already linked
-   - `No match` → roster gaps (student not in roster at all, or different initials/homeroom)
-   - `Ambiguous` → multiple roster students share initials in same homeroom
+### 2. New UI panel `ForceSetBoardNumbersPanel` on the Students tab
 
-3. **Re-run the benchmark Import Wizard** with the same CSV. The 418 unmatched rows should now resolve because their board numbers are linked to roster students.
+Location: `src/components/students/ForceSetBoardNumbersPanel.tsx`, rendered in `StudentsTab.tsx` next to `ServerBackfillPanel`.
 
-4. **If `No match` is still > 0**, download the report CSV from the panel — it lists exactly which `Student Number / Initials / Homeroom` triples failed. Two common causes:
-   - Roster homeroom code differs (file says `12E`, roster says `2E` or `1-2E`) → the parser already tries a "stem" fallback, but very different codes need the roster homeroom value updated.
-   - Student genuinely not on roster → add them via the Students tab, then re-run.
+- Textarea accepting CSV / pasted lines: `docId,externalStudentNumber` (one per line, header optional).
+- Pre-filled with the 4 known mismatches as a one-click "Load known mismatches" button so the admin can run them immediately:
+  ```
+  zczv996viRquAHpxxyvc,1057559
+  b7mKc4bGpP5uU0RWFbq0,1058132
+  CdlP82WK0Y5PWzODIsbU,1051601
+  SejuBADMIeMew6syECrv,1047318
+  ```
+- "Run force-set" button calls the new callable.
+- Renders the per-row results table (action + before → after + verified actual) and a "Download report CSV" button matching the existing `ServerBackfillPanel` style.
+- After success, calls `onAfterRun?.()` so the roster refreshes.
 
-## Why no code changes
+### 3. Build & deploy
 
-- Header aliases for `Student Number`, `Student Initials`, `Class Name` already exist in `HEADER_ALIASES`.
-- `fileUsesCodedIds = false` path is already implemented — `missingRosterNumber` warnings will be suppressed.
-- Initials + homeroom (and homeroom-stem fallback) matching is already wired.
-- Server function `backfillExternalStudentNumbers` is already deployed (Node 22).
+`functions/package.json` is already set up; the new function ships on the next deploy of the `functions` directory.
 
-## What gets delivered
+## Why this approach
 
-After approval I'll:
-1. Confirm the panel is reachable on the Students tab and walk you through the upload (no file edits needed).
-2. If the report shows a systematic homeroom-format mismatch between the Acadience file (`12E`) and your roster, propose a one-line normalization tweak in `backfillParser.ts` and apply it.
+- The mismatches are caused by *matching* logic picking the wrong doc, not by a write/permission failure. Any tool that re-runs matching will keep getting it wrong.
+- Writing by `docId` is unambiguous and trivially auditable.
+- Post-write re-read + compare gives definitive proof the value stuck (this is what the original report was doing manually).
+- Keeps the existing backfill panel untouched — this is a surgical "manual override" tool the admin can use whenever the CSV-driven matcher disagrees with reality.
 
-Nothing to change in the codebase up front — the existing tool already accepts this exact file format.
+## After the fix
+
+Once the 4 docs are corrected, re-run the benchmark Import Wizard — the four previously-mismatched IDs (1057559, 1058132, 1051601, 1047318) will now resolve to the correct students.
+
+Optional follow-up (not in this plan): investigate *why* the matcher chose the wrong docs — almost certainly a duplicate `(initials, homeroom)` collision or a stale `studentNumber` collision in the roster — and add a duplicate-detection warning to `ServerBackfillPanel` so future runs flag ambiguous targets before writing.
