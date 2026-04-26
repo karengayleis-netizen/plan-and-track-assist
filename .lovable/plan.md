@@ -1,73 +1,76 @@
-## Fix: "No function matches the filter: default:backfillExternalStudentNumbers"
+## Plan: fix the decommissioned Node 18 runtime error
 
-### What this error actually means
+Your deploy is failing because Firebase is still reading this setting from `functions/package.json`:
 
-The Firebase CLI compiled your `functions/` folder, looked at the resulting JavaScript, and didn't find an exported function named `backfillExternalStudentNumbers`. So when you asked it to deploy *just* that one function, it had nothing to deploy and bailed out.
+```json
+"engines": {
+  "node": "18"
+}
+```
 
-This is **not** a Firebase permissions issue, not a quota issue, and not a code bug in the function itself. It's a build/sync issue between Lovable's copy of the code and your local Windows copy.
+So `upgrade your runtime version` is not something you type into Command Prompt. It means the project file must be changed.
 
-### Root cause
+## What will be changed
 
-The `functions/` folder in this Lovable project is incomplete — it only contains `src/index.ts`. It is missing:
+1. Update the Firebase Functions runtime
+   - Change `functions/package.json` from Node `18` to Node `20`.
 
-- `functions/package.json` (declares dependencies + the `main` entry point + the `build` script)
-- `functions/tsconfig.json` (tells TypeScript how to compile to `lib/`)
-- `functions/.gitignore` (so `lib/` and `node_modules/` aren't committed)
+2. Align your local Windows Node version
+   - Your machine is currently using Node `v24.15.0`.
+   - That is why `npm install` showed `EBADENGINE`.
+   - Switch your local Node to **20 LTS** so it matches the Functions runtime and avoids engine warnings.
 
-Without these, two things happen:
+3. Reinstall and rebuild functions
+   - Re-run install and build inside `C:\Projects\plan-and-track-assist\functions`.
 
-1. On Lovable's side, the new `backfillExternalStudentNumbers` and `diagnoseImportStudentIds` functions were added to `src/index.ts` but there was never a working build pipeline to verify them.
-2. On your local Windows machine, when you pulled the latest code and ran `firebase deploy`, the CLI either (a) skipped the TypeScript build because there's no `package.json` with a `build` script, or (b) used a stale `lib/index.js` from a previous deploy that doesn't contain the new function. Either way, the function name doesn't exist in the compiled output.
+4. Redeploy the backend functions
+   - Run `firebase deploy --only functions` again from the project root.
 
-### The fix
-
-Add the three missing config files to `functions/` so the build pipeline is complete and reproducible. Then you re-deploy from your Windows machine using the standard 3-command sequence.
-
-### Files to create
-
-**`functions/package.json`** — Standard Firebase Functions config: Node 18, dependencies (`firebase-admin`, `firebase-functions`), devDependencies (`typescript`), `main: "lib/index.js"`, and a `build` script (`tsc`) plus a `deploy` helper. This is the file the CLI reads to know how to compile and what the entry point is.
-
-**`functions/tsconfig.json`** — TypeScript config targeting Node 18, `outDir: "lib"`, `rootDir: "src"`, strict mode on, module: `commonjs` (required for Cloud Functions Gen 1).
-
-**`functions/.gitignore`** — Excludes `lib/` and `node_modules/` from version control.
-
-No changes to `src/index.ts` — the function code itself is correct.
-
-### What you do after the files are created
-
-From your Windows terminal, in the project root:
+## Exact steps you will run on Windows after the file change
 
 ```text
-cd functions
+node --version
+cd C:\Projects\plan-and-track-assist\functions
 npm install
 npm run build
 cd ..
-firebase deploy --only functions:backfillExternalStudentNumbers
+firebase deploy --only functions
 ```
 
-The `npm run build` step is the critical one — it compiles `src/index.ts` to `lib/index.js`, which is what `firebase deploy` actually uploads. If `lib/index.js` contains the export, the CLI will find it.
+## Important local setup note
 
-### How to verify it worked before deploying
-
-After `npm run build`, run:
+Because your local Node is currently `v24.15.0`, I recommend installing or switching to **Node 20 LTS** first, then reopening Command Prompt and checking:
 
 ```text
-type lib\index.js | findstr backfillExternalStudentNumbers
+node --version
 ```
 
-(Windows equivalent of `grep`.) You should see at least one match. If you do, the deploy will succeed. If you don't, the build silently failed — check the `npm run build` output for TypeScript errors.
-
-### Also worth deploying at the same time
-
-The same `src/index.ts` also contains a second new function, `diagnoseImportStudentIds`, that was never deployed either. Once the build pipeline is in place, deploy both:
+You want it to show something like:
 
 ```text
-firebase deploy --only functions:backfillExternalStudentNumbers,functions:diagnoseImportStudentIds
+v20.x.x
 ```
 
-### What this plan does NOT do
+## Expected result
 
-- Does not change `src/index.ts`.
-- Does not change Firestore rules.
-- Does not touch the frontend (`ServerBackfillPanel`, `StudentsTab`).
-- Does not require any Firebase Console changes.
+- Firebase will stop blocking deploys for using Node 18.
+- The `EBADENGINE` warning should go away once your local Node is 20.
+- No frontend publish/update step is needed; this is a backend Functions fix.
+
+## Technical details
+
+- Confirmed current setting:
+  - `functions/package.json` → `"engines": { "node": "18" }`
+- Current function stack:
+  - `firebase-functions`: `^4.9.0`
+  - `firebase-admin`: `^12.1.0`
+- The code uses 1st gen Firebase functions via `firebase-functions/v1`, so this is a runtime version bump, not a function rewrite.
+
+## If deploy still fails after this
+
+The next checks would be:
+- update the Firebase CLI on Windows
+- delete `functions/node_modules` and reinstall cleanly
+- confirm `node --version` is actually `v20.x` in the same terminal where you deploy
+
+Once approved, I’ll update the project runtime setting from Node 18 to Node 20.
