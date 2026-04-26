@@ -77,6 +77,58 @@ export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSa
         </div>
       )}
 
+      {/* Diagnostics panel — appears when row counts don't add up or 0 imported despite valid rows */}
+      {showDiagnostics && (
+        <div className="rounded-md border-2 border-destructive bg-destructive/5 p-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <FlaskConical className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="text-sm flex-1">
+              <p className="font-semibold text-destructive">Import diagnostics</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Something blocked the writes. Use this info to find the cause.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-xs font-mono bg-background/60 rounded p-2 space-y-1">
+            <div>Total rows: <strong>{result.totalRows}</strong></div>
+            <div>Attempted (valid + matched): <strong>{result.attemptedRows ?? '?'}</strong></div>
+            <div>Imported: <strong className="text-green-700">{result.importedRows}</strong> · Failed-to-save: <strong className="text-destructive">{failedToSave}</strong> · Skipped: <strong>{result.skippedRows}</strong> · Unmatched: <strong>{result.unmatchedRows}</strong></div>
+            <div>Accounted for: <strong>{accountedFor}</strong> / {result.totalRows} {unaccountedFor !== 0 && <span className="text-destructive">→ {unaccountedFor} rows vanished</span>}</div>
+            {result.schoolIdUsed !== undefined && (
+              <div>schoolId used: <code className="bg-muted px-1 rounded">{result.schoolIdUsed || '(empty!)'}</code></div>
+            )}
+            {result.lastErrorCode && (
+              <div>Last error code: <code className="bg-muted px-1 rounded text-destructive">{result.lastErrorCode}</code></div>
+            )}
+            {result.loopAborted && (
+              <div className="text-destructive">Loop aborted: {result.loopAbortReason}</div>
+            )}
+          </div>
+
+          {onProbeWrite && result.importedRows === 0 && failedToSave === 0 && (
+            <div className="space-y-1.5">
+              <Button size="sm" variant="outline" className="w-full" onClick={runProbe} disabled={probing}>
+                {probing ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Probing…</> : <><FlaskConical className="h-3 w-3 mr-1" /> Test write 1 row (surface raw error)</>}
+              </Button>
+              {probeResult && (
+                <div className={`text-xs font-mono rounded p-2 ${probeResult.ok ? 'bg-green-500/10 text-green-700 border border-green-500/30' : 'bg-destructive/10 text-destructive border border-destructive/30'}`}>
+                  {probeResult.ok ? (
+                    <p>✓ Probe write SUCCEEDED. Database accepts writes — the bulk loop has a different issue. Re-run the import.</p>
+                  ) : (
+                    <>
+                      <p className="font-semibold">✗ Probe write FAILED</p>
+                      {probeResult.code && <p>code: <code className="bg-background/60 px-1 rounded">{probeResult.code}</code></p>}
+                      {probeResult.message && <p className="break-words mt-1">{probeResult.message}</p>}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         {[
           { label: 'Total Rows', value: result.totalRows },
