@@ -1,4 +1,5 @@
 import { normalizeStudentNumber } from './studentDisplay';
+import { normalizeGrade } from '@/types/homeroom';
 
 export interface RosterRow {
   rowIndex: number;          // 1-based source row (after header)
