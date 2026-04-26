@@ -18,6 +18,8 @@ import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Act
 import { toast } from 'sonner';
 import { StatCard } from '@/components/dashboard';
 import { formatGradeDisplay } from '@/types/homeroom';
+import { getStudentRiskLevel, RISK_LABEL, RISK_COLOR, type RiskLevel } from '@/lib/studentRisk';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 interface AnalyzeSchoolDataResponse {
   recommendations: string;
@@ -79,13 +81,40 @@ export function AdminTab() {
   // Calculate stats
   const totalStudents = students.length;
   const totalBenchmarks = benchmarks.length;
-  const atRiskCount = students.filter(s => s.isHighNeed).length;
-  const avgDataPerStudent = totalStudents > 0 ? (totalBenchmarks / totalStudents).toFixed(1) : '0';
 
-  // Grade analytics
+  // Risk derived from Acadience scoreLabel + manual flag (not just manual flag).
+  const studentRisk: Record<string, RiskLevel> = {};
+  students.forEach(s => { studentRisk[s.id] = getStudentRiskLevel(s, benchmarks); });
+  const atRiskCount = students.filter(s =>
+    studentRisk[s.id] === 'well-below' || studentRisk[s.id] === 'below'
+  ).length;
+
+  // Avg data/student should be over ASSESSED students, not whole roster (K-2 only data
+  // would otherwise be diluted by grades 3-8 with zero benchmarks).
+  const assessedStudentIds = new Set(benchmarks.map(b => b.studentId));
+  const assessedCount = assessedStudentIds.size;
+  const avgDataPerStudent = assessedCount > 0
+    ? (totalBenchmarks / assessedCount).toFixed(1)
+    : '0';
+
+  // Risk distribution by grade for Acadience-style stacked chart.
+  const riskByGrade = GRADES.map(grade => {
+    const gs = students.filter(s => s.grade === grade);
+    const counts = { 'well-below': 0, 'below': 0, 'at-or-above': 0, 'well-above': 0, 'unknown': 0 } as Record<RiskLevel, number>;
+    gs.forEach(s => { counts[studentRisk[s.id]]++; });
+    return {
+      grade: `Gr ${formatGradeDisplay(Number(grade))}`,
+      ...counts,
+      total: gs.length,
+    };
+  }).filter(r => r.total > 0 && (r['well-below'] + r['below'] + r['at-or-above'] + r['well-above']) > 0);
+
+  // Grade analytics — now driven by derived risk.
   const gradeAnalytics = GRADES.map(grade => {
     const gradeStudents = students.filter(s => s.grade === grade);
-    const atRisk = gradeStudents.filter(s => s.isHighNeed).length;
+    const atRisk = gradeStudents.filter(s =>
+      studentRisk[s.id] === 'well-below' || studentRisk[s.id] === 'below'
+    ).length;
     const stable = gradeStudents.length - atRisk;
     return {
       grade,
@@ -782,25 +811,45 @@ export function AdminTab() {
                 variant="default"
               />
               <StatCard
-                title="At Risk (Data/Flag)"
+                title="At Risk (Below+Well Below)"
                 value={atRiskCount}
+                subtitle={`${assessedCount} assessed`}
                 icon={AlertTriangle}
                 variant="destructive"
               />
               <StatCard
-                title="Avg Data/Student"
+                title="Avg Data / Assessed Student"
                 value={avgDataPerStudent}
+                subtitle={assessedCount > 0 ? `${assessedCount}/${totalStudents} students have data` : 'no data yet'}
                 icon={Activity}
                 variant="success"
               />
             </div>
 
-            {/* School Risk Profile placeholder */}
+            {/* Acadience Risk Distribution by grade */}
             <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
-              <h4 className="font-medium mb-2 text-foreground">School Risk Profile</h4>
-              <div className="h-20 bg-muted/50 rounded flex items-center justify-center text-muted-foreground">
-                Chart visualization
-              </div>
+              <h4 className="font-medium mb-3 text-foreground">Acadience Risk Distribution by Grade</h4>
+              {riskByGrade.length === 0 ? (
+                <div className="h-20 flex items-center justify-center text-muted-foreground text-sm">
+                  No Acadience scoreLabels found yet — import benchmarks with a Status column to populate this chart.
+                </div>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={riskByGrade} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="grade" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
+                      <YAxis tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="well-below" stackId="a" fill={RISK_COLOR['well-below']} name={RISK_LABEL['well-below']} />
+                      <Bar dataKey="below" stackId="a" fill={RISK_COLOR['below']} name={RISK_LABEL['below']} />
+                      <Bar dataKey="at-or-above" stackId="a" fill={RISK_COLOR['at-or-above']} name={RISK_LABEL['at-or-above']} />
+                      <Bar dataKey="well-above" stackId="a" fill={RISK_COLOR['well-above']} name={RISK_LABEL['well-above']} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             {/* Areas of Need */}
