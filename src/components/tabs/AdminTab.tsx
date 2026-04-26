@@ -811,25 +811,45 @@ export function AdminTab() {
                 variant="default"
               />
               <StatCard
-                title="At Risk (Data/Flag)"
+                title="At Risk (Below+Well Below)"
                 value={atRiskCount}
+                subtitle={`${assessedCount} assessed`}
                 icon={AlertTriangle}
                 variant="destructive"
               />
               <StatCard
-                title="Avg Data/Student"
+                title="Avg Data / Assessed Student"
                 value={avgDataPerStudent}
+                subtitle={assessedCount > 0 ? `${assessedCount}/${totalStudents} students have data` : 'no data yet'}
                 icon={Activity}
                 variant="success"
               />
             </div>
 
-            {/* School Risk Profile placeholder */}
+            {/* Acadience Risk Distribution by grade */}
             <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
-              <h4 className="font-medium mb-2 text-foreground">School Risk Profile</h4>
-              <div className="h-20 bg-muted/50 rounded flex items-center justify-center text-muted-foreground">
-                Chart visualization
-              </div>
+              <h4 className="font-medium mb-3 text-foreground">Acadience Risk Distribution by Grade</h4>
+              {riskByGrade.length === 0 ? (
+                <div className="h-20 flex items-center justify-center text-muted-foreground text-sm">
+                  No Acadience scoreLabels found yet — import benchmarks with a Status column to populate this chart.
+                </div>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={riskByGrade} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="grade" tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
+                      <YAxis tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="well-below" stackId="a" fill={RISK_COLOR['well-below']} name={RISK_LABEL['well-below']} />
+                      <Bar dataKey="below" stackId="a" fill={RISK_COLOR['below']} name={RISK_LABEL['below']} />
+                      <Bar dataKey="at-or-above" stackId="a" fill={RISK_COLOR['at-or-above']} name={RISK_LABEL['at-or-above']} />
+                      <Bar dataKey="well-above" stackId="a" fill={RISK_COLOR['well-above']} name={RISK_LABEL['well-above']} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
 
             {/* Areas of Need */}
