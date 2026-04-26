@@ -1,62 +1,73 @@
-## Make Option A actually work — server-side backfill of `externalStudentNumber`
+## Fix: "No function matches the filter: default:backfillExternalStudentNumbers"
 
-### Why the previous backfill failed silently
+### What this error actually means
 
-Tracing the earlier "37 succeeded, 4 didn't persist" symptom against the current code and rules:
+The Firebase CLI compiled your `functions/` folder, looked at the resulting JavaScript, and didn't find an exported function named `backfillExternalStudentNumbers`. So when you asked it to deploy *just* that one function, it had nothing to deploy and bailed out.
 
-1. **Client-side writes go through Firestore rules.** The `students` update rule requires both `resourceSameSchool()` and `requestSameSchool()` — meaning the existing doc *and* the update payload both need a `schoolId` matching the caller's. If those 4 student docs had a missing/different `schoolId`, the write looks "successful" from the SDK's optimistic perspective but is rejected on the server, so the value never persists.
-2. **`updateDoc` from the client doesn't always surface a hard error** in mixed batches when the optimistic local cache write happens before the server roundtrip — especially if the calling code didn't `await` and inspect each promise individually.
-3. **`studentNumber` on your docs is the coded ID** (`4F-14`), not the board number. Nothing in your roster currently holds the board number, so the import wizard cannot match. Backfill is the missing prerequisite.
+This is **not** a Firebase permissions issue, not a quota issue, and not a code bug in the function itself. It's a build/sync issue between Lovable's copy of the code and your local Windows copy.
 
-### Goal
+### Root cause
 
-A reliable, one-shot way to write the real board number into `externalStudentNumber` on every student doc — with a per-row report of exactly what happened, and zero dependence on client-side rules quirks.
+The `functions/` folder in this Lovable project is incomplete — it only contains `src/index.ts`. It is missing:
 
-### Approach
+- `functions/package.json` (declares dependencies + the `main` entry point + the `build` script)
+- `functions/tsconfig.json` (tells TypeScript how to compile to `lib/`)
+- `functions/.gitignore` (so `lib/` and `node_modules/` aren't committed)
 
-Add a new admin-only callable Cloud Function that does the backfill server-side using the Admin SDK (which bypasses Firestore rules entirely). The teacher/admin uploads the same CSV they already have (initials + board number + section + ordinal). The function:
+Without these, two things happen:
 
-1. Loads the caller's full school roster once.
-2. For each CSV row, finds the matching student via the same 3-tier match used elsewhere (Section + Student #, then Initials + Homeroom).
-3. Compares the CSV board number to the doc's current `externalStudentNumber`.
-4. Writes only when different/missing.
-5. Returns a structured report: `updated`, `alreadyCorrect`, `noMatch`, `ambiguous`, `errored`, plus per-row details.
+1. On Lovable's side, the new `backfillExternalStudentNumbers` and `diagnoseImportStudentIds` functions were added to `src/index.ts` but there was never a working build pipeline to verify them.
+2. On your local Windows machine, when you pulled the latest code and ran `firebase deploy`, the CLI either (a) skipped the TypeScript build because there's no `package.json` with a `build` script, or (b) used a stale `lib/index.js` from a previous deploy that doesn't contain the new function. Either way, the function name doesn't exist in the compiled output.
 
-Because the function runs as Admin SDK, the `schoolId`-mismatch / missing-`schoolId` cases that silently failed before will now succeed (and the function can also *repair* the `schoolId` on the same write when it's missing).
+### The fix
 
-### UI surface
+Add the three missing config files to `functions/` so the build pipeline is complete and reproducible. Then you re-deploy from your Windows machine using the standard 3-command sequence.
 
-Add a small "Backfill board numbers" panel inside the existing Students tab admin section (near the existing CSV import). It accepts the same roster CSV the user already has, calls the new function, then renders the result counts and lets them download a per-row CSV report (`student_id, action, before, after, reason`).
+### Files to create
 
-### Files to change
+**`functions/package.json`** — Standard Firebase Functions config: Node 18, dependencies (`firebase-admin`, `firebase-functions`), devDependencies (`typescript`), `main: "lib/index.js"`, and a `build` script (`tsc`) plus a `deploy` helper. This is the file the CLI reads to know how to compile and what the entry point is.
 
-**`functions/src/index.ts`**
-- New callable `backfillExternalStudentNumbers`.
-  - Auth: `assertIsAdmin` + caller must have `schoolId`.
-  - Input: `{ rows: Array<{ section?: string; ordinal?: string; initials?: string; homeroom?: string; boardNumber: string }> }` (max 2000 rows).
-  - For each row: find candidate doc via `studentNumber == "{section}-{ordinal}"` first, fall back to `(initials, homeroom)` within the caller's `schoolId`. If still no match, also try a cross-school lookup *only* for docs whose `schoolId` is empty (those are the "hidden missing schoolId" cases) and repair the `schoolId` in the same write.
-  - Skip when `externalStudentNumber` already equals the normalized board number.
-  - Return per-row results + totals.
+**`functions/tsconfig.json`** — TypeScript config targeting Node 18, `outDir: "lib"`, `rootDir: "src"`, strict mode on, module: `commonjs` (required for Cloud Functions Gen 1).
 
-**`src/components/tabs/StudentsTab.tsx`** (or a new sibling component imported here)
-- New "Backfill board numbers" card: file picker → parse CSV client-side → call the function → show counts + downloadable report. Reuse `parseCSV` from `src/lib/csvParser.ts`.
+**`functions/.gitignore`** — Excludes `lib/` and `node_modules/` from version control.
 
-**`src/lib/firebase.ts`** — no change; already exports `functions`.
+No changes to `src/index.ts` — the function code itself is correct.
 
-**No rules change required** — the function bypasses rules. (Optional follow-up: tighten the existing `students` create/update rules later, since backfill no longer relies on the client.)
+### What you do after the files are created
 
-### Deployment
-
-After implementation, the user runs:
+From your Windows terminal, in the project root:
 
 ```text
+cd functions
+npm install
+npm run build
+cd ..
 firebase deploy --only functions:backfillExternalStudentNumbers
 ```
 
-Then uses the new panel once. After it finishes, the Acadience import wizard will match every row against `externalStudentNumber` on the first try.
+The `npm run build` step is the critical one — it compiles `src/index.ts` to `lib/index.js`, which is what `firebase deploy` actually uploads. If `lib/index.js` contains the export, the CLI will find it.
 
-### What this does NOT do
+### How to verify it worked before deploying
 
-- Does not remove `externalStudentNumber` from the data model — keeps it as the canonical board-number field, exactly as the rest of the codebase expects.
-- Does not change the import wizard matching logic — that's already correct, it just needs the field populated.
-- Does not change `studentNumber` (`4F-14` style codes stay intact for UI display, sorting, and audit).
+After `npm run build`, run:
+
+```text
+type lib\index.js | findstr backfillExternalStudentNumbers
+```
+
+(Windows equivalent of `grep`.) You should see at least one match. If you do, the deploy will succeed. If you don't, the build silently failed — check the `npm run build` output for TypeScript errors.
+
+### Also worth deploying at the same time
+
+The same `src/index.ts` also contains a second new function, `diagnoseImportStudentIds`, that was never deployed either. Once the build pipeline is in place, deploy both:
+
+```text
+firebase deploy --only functions:backfillExternalStudentNumbers,functions:diagnoseImportStudentIds
+```
+
+### What this plan does NOT do
+
+- Does not change `src/index.ts`.
+- Does not change Firestore rules.
+- Does not touch the frontend (`ServerBackfillPanel`, `StudentsTab`).
+- Does not require any Firebase Console changes.
