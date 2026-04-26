@@ -69,6 +69,14 @@ export interface ImportResult {
   failedToSaveRows: number;
   writeErrors: string[];
   classSummary?: Record<string, number>;
+  // Diagnostics — added so we can spot silently dropped rows
+  attemptedRows?: number;
+  accountedFor?: number;
+  unaccountedFor?: number;
+  lastErrorCode?: string;
+  schoolIdUsed?: string;
+  loopAborted?: boolean;
+  loopAbortReason?: string;
 }
 
 export interface NormalizedBenchmark {

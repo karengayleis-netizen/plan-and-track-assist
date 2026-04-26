@@ -72,6 +72,7 @@ export function ImportWizard({ open, onOpenChange, onComplete }: ImportWizardPro
             errorSummary={wizard.errorSummary}
             onDownloadErrors={wizard.downloadErrorReport}
             onSaveTemplate={() => wizard.setStep(WizardStep.SaveTemplate)}
+            onProbeWrite={wizard.probeWrite}
             onClose={handleClose}
           />
         );
