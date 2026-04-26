@@ -301,52 +301,52 @@ export function useImportWizard(onComplete?: () => void) {
 
     try {
       for (const row of validRows) {
+        const m = state.columnMapping;
+        const getVal = (field: InternalField) =>
+          m[field] >= 0 ? row.rawValues[m[field]]?.trim() || '' : '';
+
+        const percentStr = getVal('percent');
+        const percentVal = percentStr ? parseFloat(percentStr) : undefined;
+        const classCode = row.csvHomeroom || getVal('classCode') || '';
+        const safeDate = row.parsedDate && !isNaN(row.parsedDate.getTime())
+          ? row.parsedDate
+          : new Date();
+
+        const payload = {
+          schoolId: schoolIdUsed,
+          studentId: row.matchedStudentId,
+          studentNumber: row.matchedStudentNumber || '',
+          initials: row.matchedStudentInitials || '',
+          source: state.source,
+          assessmentFamily: preset.assessmentFamily,
+          assessmentType: row.assessmentType,
+          assessmentName: row.assessmentType,
+          score: row.score,
+          scoreLabel: getVal('status') || undefined,
+          rawScore: getVal('rawScore') || undefined,
+          maxScore: 100,
+          percent: percentVal,
+          percentage: percentVal || 0,
+          benchmarkWindow: getVal('benchmarkWindow') || undefined,
+          strand: getVal('strand') || undefined,
+          classCode: classCode || undefined,
+          subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
+          date: safeDate,
+          term: getVal('benchmarkWindow') || '',
+          notes: getVal('notes') || undefined,
+          ref: getVal('ref') || undefined,
+          reference: getVal('ref') || undefined,
+          importedAt: new Date(),
+          importedBy: user.uid,
+          rawImportMeta: {
+            fileName: state.fileName,
+            columnMapping: columnNameMap,
+          },
+          createdAt: new Date(),
+        };
+
         try {
-          const m = state.columnMapping;
-          const getVal = (field: InternalField) =>
-            m[field] >= 0 ? row.rawValues[m[field]]?.trim() || '' : '';
-
-          const percentStr = getVal('percent');
-          const percentVal = percentStr ? parseFloat(percentStr) : undefined;
-
-          const classCode = row.csvHomeroom || getVal('classCode') || '';
-
-          const safeDate = row.parsedDate && !isNaN(row.parsedDate.getTime())
-            ? row.parsedDate
-            : new Date();
-
-          await addDoc(collection(db, 'benchmarks'), {
-            schoolId: schoolIdUsed,
-            studentId: row.matchedStudentId,
-            studentNumber: row.matchedStudentNumber || '',
-            initials: row.matchedStudentInitials || '',
-            source: state.source,
-            assessmentFamily: preset.assessmentFamily,
-            assessmentType: row.assessmentType,
-            assessmentName: row.assessmentType,
-            score: row.score,
-            scoreLabel: getVal('status') || undefined,
-            rawScore: getVal('rawScore') || undefined,
-            maxScore: 100,
-            percent: percentVal,
-            percentage: percentVal || 0,
-            benchmarkWindow: getVal('benchmarkWindow') || undefined,
-            strand: getVal('strand') || undefined,
-            classCode: classCode || undefined,
-            subject: preset.assessmentFamily === 'reading' ? 'Language Arts' : preset.assessmentFamily === 'math' ? 'Mathematics' : '',
-            date: safeDate,
-            term: getVal('benchmarkWindow') || '',
-            notes: getVal('notes') || undefined,
-            ref: getVal('ref') || undefined,
-            reference: getVal('ref') || undefined,
-            importedAt: new Date(),
-            importedBy: user.uid,
-            rawImportMeta: {
-              fileName: state.fileName,
-              columnMapping: columnNameMap,
-            },
-            createdAt: new Date(),
-          });
+          await addDoc(collection(db, 'benchmarks'), payload);
           importedCount++;
 
           // Track per-class summary
@@ -366,9 +366,12 @@ export function useImportWizard(onComplete?: () => void) {
             schoolId: schoolIdUsed,
             assessmentType: row.assessmentType,
             score: row.score,
+            payload,
           });
           if (writeErrors.length < 5) {
-            writeErrors.push(`Row ${row.rowIndex + 2} [${code}]: ${msg}`);
+            writeErrors.push(
+              `Row ${row.rowIndex + 2} · student ${row.matchedStudentNumber || '?'} · [${code}] ${msg}`
+            );
           }
         }
       }
@@ -438,39 +441,82 @@ export function useImportWizard(onComplete?: () => void) {
 
   // Probe: try to write exactly ONE benchmark doc to surface the raw Firestore error.
   // Used from the Results screen when 0 imported and 0 failed-to-save (the impossible case).
-  const probeWrite = useCallback(async (): Promise<{ ok: boolean; code?: string; message?: string }> => {
+  const probeWrite = useCallback(async (): Promise<{
+    ok: boolean;
+    code?: string;
+    message?: string;
+    rowNumber?: number;
+    studentNumber?: string;
+    schoolIdUsed?: string;
+    payload?: Record<string, unknown>;
+  }> => {
     if (!user || !state.source) return { ok: false, message: 'No user/source' };
     const schoolIdUsed = (user.schoolId || '').trim();
-    if (!schoolIdUsed) return { ok: false, code: 'empty-schoolId', message: 'user.schoolId is empty' };
+    if (!schoolIdUsed) return { ok: false, code: 'empty-schoolId', message: 'user.schoolId is empty', schoolIdUsed: '' };
     const firstMatched = state.importRows.find(r => r.matchedStudentId && r.status !== 'error');
-    if (!firstMatched) return { ok: false, message: 'No matched row available to probe' };
+    if (!firstMatched) return { ok: false, message: 'No matched row available to probe', schoolIdUsed };
 
     const preset = getPreset(state.source);
+    const m = state.columnMapping;
+    const getVal = (field: InternalField) =>
+      m[field] >= 0 ? firstMatched.rawValues[m[field]]?.trim() || '' : '';
+    const classCode = firstMatched.csvHomeroom || getVal('classCode') || '';
+    const safeDate = firstMatched.parsedDate && !isNaN(firstMatched.parsedDate.getTime())
+      ? firstMatched.parsedDate
+      : new Date();
+
+    const payload = {
+      schoolId: schoolIdUsed,
+      studentId: firstMatched.matchedStudentId,
+      studentNumber: firstMatched.matchedStudentNumber || '',
+      initials: firstMatched.matchedStudentInitials || '',
+      source: state.source,
+      assessmentFamily: preset.assessmentFamily,
+      assessmentType: firstMatched.assessmentType || 'PROBE',
+      assessmentName: firstMatched.assessmentType || 'PROBE',
+      score: firstMatched.score || '0',
+      scoreLabel: getVal('status') || undefined,
+      benchmarkWindow: getVal('benchmarkWindow') || undefined,
+      classCode: classCode || undefined,
+      date: safeDate,
+      importedAt: new Date(),
+      importedBy: user.uid,
+      createdAt: new Date(),
+      probe: true,
+    };
+
     try {
-      await addDoc(collection(db, 'benchmarks'), {
-        schoolId: schoolIdUsed,
-        studentId: firstMatched.matchedStudentId,
-        studentNumber: firstMatched.matchedStudentNumber || '',
-        initials: firstMatched.matchedStudentInitials || '',
-        source: state.source,
-        assessmentFamily: preset.assessmentFamily,
-        assessmentType: firstMatched.assessmentType || 'PROBE',
-        assessmentName: firstMatched.assessmentType || 'PROBE',
-        score: firstMatched.score || '0',
-        date: firstMatched.parsedDate && !isNaN(firstMatched.parsedDate.getTime()) ? firstMatched.parsedDate : new Date(),
-        importedAt: new Date(),
-        importedBy: user.uid,
-        createdAt: new Date(),
-        probe: true,
-      });
-      console.log('[ImportWizard] probeWrite SUCCEEDED');
-      return { ok: true };
+      await addDoc(collection(db, 'benchmarks'), payload);
+      console.log('[ImportWizard] probeWrite SUCCEEDED', { payload });
+      return {
+        ok: true,
+        rowNumber: firstMatched.rowIndex + 2,
+        studentNumber: firstMatched.matchedStudentNumber,
+        schoolIdUsed,
+        payload,
+      };
     } catch (err) {
       const e = err as { code?: string; message?: string };
-      console.error('[ImportWizard] probeWrite FAILED', { code: e?.code, message: e?.message, raw: err });
-      return { ok: false, code: e?.code, message: e?.message || String(err) };
+      console.error('[ImportWizard] probeWrite FAILED', {
+        code: e?.code,
+        message: e?.message,
+        rowNumber: firstMatched.rowIndex + 2,
+        studentNumber: firstMatched.matchedStudentNumber,
+        schoolIdUsed,
+        payload,
+        raw: err,
+      });
+      return {
+        ok: false,
+        code: e?.code,
+        message: e?.message || String(err),
+        rowNumber: firstMatched.rowIndex + 2,
+        studentNumber: firstMatched.matchedStudentNumber,
+        schoolIdUsed,
+        payload,
+      };
     }
-  }, [user, state.source, state.importRows]);
+  }, [user, state.source, state.importRows, state.columnMapping]);
 
 
   // Step 6: Templates
