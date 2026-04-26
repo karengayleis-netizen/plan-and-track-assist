@@ -850,7 +850,7 @@ export const updateStudentNumbersFromRoster = functions
       const writes: Array<{
         rowIndex: number;
         kind: "update" | "create";
-        docRef: FirebaseFirestore.DocumentReference;
+        docRef: admin.firestore.DocumentReference;
         payload: Record<string, unknown>;
         expectedBoardNumber: string;
       }> = [];
