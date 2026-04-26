@@ -1,132 +1,142 @@
-# Update Student Numbers from Board Roster (new admin tool)
+# Clean Reset: Student Identity Model
 
-Stop trying to improve the backfill resolver. Instead, **rewrite student docs** so that `studentNumber`, `externalStudentNumber`, and `stableStudentId` all carry the board Student Number, and the old coded value (`4F-14`) moves to a new `displayCode` field. After this runs once, the existing Acadience import wizard matches naturally — no further wizard changes needed.
+Reset the student identity system to use **board student number** as the single identifier. Drop coded IDs (4F-14), `externalStudentNumber`, `stableStudentId`, `displayCode`, and ordinal-based matching. Build a new admin roster upload that fully replaces the school's student records.
 
-## What gets built
+## New data model
 
-### 1. New Cloud Function: `updateStudentNumbersFromRoster`
-File: `functions/src/index.ts` (admin-only callable)
+`Student` document fields kept:
+- `studentNumber` (board number from CSV, e.g. `"970591"`)
+- `initials` (e.g. `"J.P.E."`)
+- `homeroom` (e.g. `"4F"`)
+- `grade` (e.g. `"4"`)
+- `schoolId`
+- `active: true`
+- `createdAt`, `updatedAt`
 
-Input:
+Removed/ignored: `stableStudentId`, `externalStudentNumber`, `displayCode`, `firstName`, `lastName`, `seat`, `yearGroup`, `className`, `sen`, `pupilPremium`, `eal`, `gender` (kept optional but not part of identity).
+
+Identity rule: **upsert by `studentNumber` only.**
+
+## Admin roster upload (replaces existing flow)
+
+New panel **"Replace Roster from Board CSV"** in Students tab (admin only). Hidden behind a confirmation step.
+
+CSV headers accepted (case-insensitive, flexible):
+- `Student Number`
+- `Student Initials`
+- `Homeroom` OR `Section Number`
+- `Grade`
+
+### Flow
+
+1. **Upload + parse** — read CSV in browser, normalize values:
+   `String(v ?? "").trim().replace(/\.0$/, "")`
+2. **Preview table** showing every parsed row with validation status:
+   - Missing `studentNumber` → row error
+   - Duplicate `studentNumber` within file → row error
+   - Missing `homeroom`/`section` → row error
+   - Missing `grade` → row error
+   - Missing `initials` → warning (allowed)
+   - Summary: `X usable rows, Y errors, Z warnings`
+3. **Confirm "Replace Roster"** button (disabled if errors). Triggers a Cloud Function `replaceSchoolRoster`:
+   - Marks all existing students for this `schoolId` as `active: false` (preserves history; benchmarks keep their `studentId` references but won't surface in active lists)
+   - Deletes any old students whose `studentNumber` matches the legacy 4F-14 coded pattern (`/^[A-Z0-9]+-\d+$/`) for this `schoolId`
+   - For each valid CSV row, upserts by `studentNumber` (query: `where schoolId == X and studentNumber == N`):
+     - If found → update `initials`, `homeroom`, `grade`, `active: true`, `updatedAt`
+     - If not found → create new doc with the 7 fields above
+4. **Results screen** — created / updated / deactivated / removed counts.
+
+## Benchmark import matching (rewrite)
+
+In `useImportWizard.ts`, replace the 3-tier match with a single rule:
+
 ```ts
-{
-  rows: Array<{
-    boardStudentNumber: string;
-    initials: string;
-    homeroom: string;
-    grade?: string;
-    gender?: string;
-    oen?: string;
-    sourceSheet?: string;
-    rowIndex: number;
-  }>;
-  dryRun: boolean;          // true = preview, false = write
-  createMissing: boolean;   // user toggle for step 4
+const norm = (v: unknown) => String(v ?? "").trim().replace(/\.0$/, "");
+const byStudentNumber = new Map<string, Student>();
+for (const s of students) {
+  if (!s.active) continue;
+  const n = norm(s.studentNumber);
+  if (n) byStudentNumber.set(n, s);
 }
+// match: byStudentNumber.get(norm(csvStudentNumber))
 ```
 
-Per-row logic (server-side, runs as admin so it bypasses rules):
+Drop all references to `externalStudentNumber`, `stableStudentId`, `displayCode` in matching, lookup indexes, and unmatched-diagnosis output.
 
-1. **Normalize**
-   - `boardStudentNumber = String(input).trim().replace(/\.0+$/, '')` — reject if empty or non-numeric.
-   - `initials = input.replace(/\./g, '').replace(/\s+/g, '').toUpperCase().trim()`
-   - `homeroom = input.toUpperCase().trim()`
+Acadience preset already maps "Student Number" → `studentIdentifier`; no change needed there.
 
-2. **Match within caller's `schoolId`**
-   - First pass: students where `normInitials === initials AND normHomeroom === homeroom`.
-   - If 0 → second pass with `homeroomStem` (existing helper logic, e.g. `4AF` → `4`).
-   - If still 0 → action `create` (when `createMissing`) or `skipped`.
-   - If exactly 1 → action `update`.
-   - If > 1 → action `ambiguous` (return candidate IDs; never auto-write).
+## Teacher-facing display
 
-3. **Update payload** (only when action = `update`):
-   ```ts
-   {
-     displayCode: existing.displayCode || existing.studentNumber, // preserve "4F-14"
-     studentNumber: boardStudentNumber,
-     externalStudentNumber: boardStudentNumber,
-     stableStudentId: (
-       !existing.stableStudentId ||
-       /^[A-Z0-9]+-\d+$/i.test(existing.stableStudentId)
-     ) ? boardStudentNumber : existing.stableStudentId,
-     // initials, homeroom, grade, schoolId left untouched
-     updatedAt, lastUpdated
-   }
-   ```
+New helper `formatStudentDisplay(student)`:
 
-4. **Create payload** (when action = `create`):
-   ```ts
-   {
-     schoolId: callerSchoolId,
-     studentNumber: boardStudentNumber,
-     externalStudentNumber: boardStudentNumber,
-     stableStudentId: boardStudentNumber,
-     initials, homeroom,
-     grade: grade || '',
-     firstName: '', lastName: '',
-     // plus the standard required defaults from StudentSchema
-     createdAt, updatedAt, lastUpdated
-   }
-   ```
-
-5. **Verification re-read** (write mode only): re-fetch each touched doc and confirm `externalStudentNumber === boardStudentNumber`. Mark row `verified: true|false`.
-
-Returns: `{ callerSchoolId, totals, results: [{ rowIndex, action, docId?, before, after, candidateIds?, verified?, reason? }] }`.
-
-### 2. New UI panel: `UpdateStudentNumbersFromRosterPanel.tsx`
-Location: `src/components/students/`, mounted in `StudentsTab.tsx` (admin only).
-
-Flow:
-1. **Upload CSV / XLSX** — reuse the existing `parseBackfillFile` helper (it already detects "Student Number", "Student Initials", "Section Number / Homeroom", "Grade"). Add OEN + Gender + Source Sheet pass-through.
-2. **Preview** — call the function with `dryRun: true`. Render a table with these columns:
-
-   | CSV # | Initials | Homeroom | Matched doc id | Old studentNumber | New studentNumber | displayCode | Action |
-   |---|---|---|---|---|---|---|---|
-
-   Action badge colors: update (blue), create (green), ambiguous (amber, expandable to show candidate IDs + a per-row "pick" radio), skipped (grey).
-3. **Confirm & write** — toggles: ☑ Create missing students. Button disabled until preview ran.
-4. **Results card** — totals: updated, created, ambiguous, skipped, failed; plus a verification line ("X of Y verified after re-read"). Download CSV report button.
-5. After write: call `refetch()` from `useStudents` so the roster view reflects new numbers.
-
-### 3. Type addition
-`src/types/index.ts` — add:
 ```ts
-displayCode?: string; // human-readable code like "4F-14", preserved from legacy studentNumber
+const last3 = student.studentNumber.slice(-3);
+return `${student.initials} · ${student.homeroom} · #${last3}`;
+// → "J.P.E. · 4F · #591"
 ```
-No other fields renamed; `Student.studentNumber` keeps its name and now carries the board number going forward.
 
-## Files changed
+Apply in:
+- `StudentsTab` roster table (replaces full studentNumber column)
+- `StudentSummaryPanel`
+- `GlobalSearch` results
+- `BenchmarksTab` student column
+- `MarkbookTab`, `MissingDataTab`, `TriangulationTab`, `InsightsTab` lists
+- `BulkActionsBar` selected-student chips
 
-- `functions/src/index.ts` — new `updateStudentNumbersFromRoster` callable
-- `src/components/students/UpdateStudentNumbersFromRosterPanel.tsx` — new panel
-- `src/components/tabs/StudentsTab.tsx` — mount panel for admins
-- `src/types/index.ts` — add `displayCode?: string`
-- (optional cosmetic) any student row component that shows the coded ID — display `displayCode || studentNumber` so old "4F-14" still shows somewhere
+Keep full `studentNumber` visible in:
+- Admin Students table (extra column, admin only)
+- Import Wizard preview/results
+- Backfill/debug panels
+- Student edit modal
 
-No changes needed to `useImportWizard.ts` — its existing 3-tier match (`externalStudentNumber` → `studentNumber` → `stableStudentId`) all point to the board number after this runs.
+## Files to edit / remove
 
-## Roll-out
+**Edit**
+- `src/types/index.ts` — slim `Student` interface
+- `src/lib/validations.ts` — slim `StudentSchema`
+- `src/hooks/useStudents.ts` — drop duplicate-`stableStudentId` check; upsert by `studentNumber`
+- `src/hooks/useImportWizard.ts` — single-key matching
+- `src/components/tabs/StudentsTab.tsx` — remove old CSV upload, ForceSetBoardNumbersPanel, ServerBackfillPanel, UpdateStudentNumbersFromRosterPanel, backfill state; add new `ReplaceRosterPanel`; switch table to display helper
+- `src/components/tabs/BenchmarksTab.tsx` — display helper
+- `src/components/layout/GlobalSearch.tsx` — display helper, search by `studentNumber`/`initials`/`homeroom` only
+- `src/components/benchmarks/PreviewStep.tsx` — display helper, drop external/stable refs
+- `functions/src/index.ts` — add `replaceSchoolRoster` callable; deprecate (leave but stop calling) `updateStudentNumbersFromRoster`, `forceSetBoardNumbers`, `diagnoseImportStudentIds`
 
-1. Deploy: `firebase deploy --only functions`
-2. Students tab → **Update Student Numbers from Board Roster** → upload roster → review preview → confirm.
-3. Re-run Acadience import wizard. Row with `Student Number = 970591` matches the J.P.E. doc whose `externalStudentNumber = 970591`.
+**Create**
+- `src/components/students/ReplaceRosterPanel.tsx` — upload, preview, confirm
+- `src/lib/studentDisplay.ts` — `formatStudentDisplay()` helper
+- `src/lib/rosterParser.ts` — parse + validate the 4-column board CSV
 
-## Acceptance — J.P.E.
+**Delete**
+- `src/components/students/ForceSetBoardNumbersPanel.tsx`
+- `src/components/students/ServerBackfillPanel.tsx`
+- `src/components/students/UpdateStudentNumbersFromRosterPanel.tsx`
+- `src/lib/backfillParser.ts`
 
-| Field | Before | After |
-|---|---|---|
-| `studentNumber` | `4F-14` | `970591` |
-| `externalStudentNumber` | (empty) | `970591` |
-| `stableStudentId` | `4F-14` (or empty) | `970591` |
-| `displayCode` | (n/a) | `4F-14` |
-| `initials`, `homeroom`, `grade`, `schoolId` | unchanged | unchanged |
+## Cloud Function: `replaceSchoolRoster`
 
-## Safety guarantees
+Callable, admin-only (verify `request.auth` + `user_roles/{uid}.role == 'admin'`).
 
-- Admin-only (checks caller's custom claims).
-- `schoolId` scoped — never touches docs outside the caller's school.
-- Coded IDs (matching `^[A-Z0-9]+-\d+$`) are **never** written into `externalStudentNumber` or `studentNumber`.
-- Ambiguous matches are never auto-written; user must resolve.
-- Dry-run preview is mandatory — write button only enables after preview returns.
-- Post-write re-read verification per row.
-- Idempotent: re-running on already-migrated rows results in `update` with identical values (no harm) or can be skipped via an `alreadyMigrated` short-circuit (`existing.externalStudentNumber === boardStudentNumber`).
+Input: `{ rows: Array<{ studentNumber, initials, homeroom, grade }> }` (already validated client-side; re-validate server-side).
+
+Steps (batched writes):
+1. Query all `students` where `schoolId == caller.schoolId`
+2. Build `existingByNumber` map
+3. For each input row: upsert by `studentNumber`; collect ids touched
+4. For existing students NOT in input: set `active: false`
+5. For existing students whose `studentNumber` matches `/^[A-Z0-9]+-\d+$/` AND not in input: delete
+6. Return `{ created, updated, deactivated, deleted, errors }`
+
+## Acceptance test
+
+1. Upload CSV with row: `970591, J.P.E., 4F, 4`
+2. Firestore `students` doc:
+   ```json
+   { "studentNumber": "970591", "initials": "J.P.E.", "homeroom": "4F", "grade": "4", "active": true, "schoolId": "..." }
+   ```
+3. Roster table shows: `J.P.E. · 4F · #591`
+4. Acadience CSV row with `Student Number = 970591` matches immediately in Import Wizard preview.
+
+## Notes on existing data
+
+- Benchmark/markbook documents already reference students by Firestore `id` (not `studentNumber`), so deactivating old student records does not orphan them — but since you confirmed no usable benchmark/markbook data exists yet, the cleanest path is: after the new roster upload, also offer a one-click "Wipe all benchmarks/markbook for this school" button in the admin panel (separate confirm). I'll include this as part of `ReplaceRosterPanel`.
