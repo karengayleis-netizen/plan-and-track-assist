@@ -1,77 +1,173 @@
-## What you're seeing and why
+## Goal
 
-The Acadience import succeeded (971 benchmarks saved), but the dashboards were never wired to read Acadience-style data. Three independent gaps:
+Transform the Admin tab from a "data summary" into a Principal Leadership Dashboard: comprehensive filters, KPI cards focused on action, two heatmaps, leadership action lists, a Data Meeting view with export, and a separate gender-completeness card.
 
-**1. Class Growth Trend is blank**
-The chart averages `benchmark.percentage`. The Acadience importer writes `percentage: 0` for every row because Acadience CSVs don't have a percent column — the score field holds the raw score (45, 77, 103…). With percentage=0 on all 971 rows, the trend line is flat at 0. Compounded by a hard `Y: [0, 100]` axis that clips real raw scores like 103.
+All risk classification continues to flow through `getStudentRiskLevel` / `classifyScoreLabel` (Acadience `scoreLabel`-based), and student-facing labels stay privacy-friendly via `formatStudentDisplay` (initials · homeroom · #last3). Full `studentNumber` is shown only in the Data Meeting CSV export.
 
-**2. Admin says "all students doing well"**
-"At Risk" only counts students with the manual `isHighNeed` flag set in the roster. It never looks at benchmark scores or Acadience status labels (`well below benchmark`, `below benchmark`, `at/above benchmark`, `well above`). With 0 students manually flagged, the number is 0 regardless of imported data.
+This work is additive — existing Class Management, Staff Directory, AI Strategy and the recently-added Class Deep Dive cards are preserved. The new content goes at the top of the Admin tab, above existing cards.
 
-Also: `Avg Data/Student = totalBenchmarks ÷ totalStudents` divides by the whole roster (K–8). Since Acadience is K–2 only, the average is artificially low.
+---
 
-**3. Cannot deep-dive K–2 students**
-The students appear in the dropdown, but the chart is empty because:
-- It plots `percentage ?? parseFloat(score)` → for Acadience the fallback to `score` does work, but
-- Y-axis is locked `[0, 100]` so any composite score above 100 is clipped, and
-- Each Acadience subtest (NWF-CLS, NWF-WWR, Composite, etc.) has a totally different scale, so plotting them on one axis is meaningless without filtering by measure.
+## 1. New shared utilities
 
-There's also no class/homeroom filter on Insights — admins only ever see the whole school.
+### `src/lib/leadershipMetrics.ts` (new)
+Pure functions, no React, fully unit-testable:
 
-## Plan
+- `inferWindow(b: Benchmark): 'BOY'|'MOY'|'EOY'|'unknown'` — derived from `benchmarkWindow` / `term` strings (`/beginning|boy|fall/i` → BOY, `/middle|moy|winter/i` → MOY, `/end|eoy|spring/i` → EOY).
+- `STANDARD_MEASURES = ['FSF','LNF','PSF','NWF-CLS','NWF-WWR','ORF','Composite']`.
+- `inferMeasure(b: Benchmark): string` — normalizes `assessmentType`/`assessmentName` to one of `STANDARD_MEASURES` (fallback to raw string).
+- `latestBenchmarkPerStudentMeasure(benchmarks)` — Map keyed by `${studentId}|${measure}` → most recent benchmark.
+- `riskFromBenchmark(b)` → `RiskLevel` via `classifyScoreLabel(b.scoreLabel)`.
+- `studentsMissingData(students, benchmarks, {window?, measure?})` — students with zero benchmarks matching the scope.
+- `multipleBelowMeasures(student, benchmarks)` — count of distinct measures where the latest score is below or well-below.
+- `pctByBand(items)` → `{ atOrAbove, near, below, total }`.
 
-### Fix 1 — Derive risk from Acadience status (Admin + Insights)
+### `src/lib/leadershipExport.ts` (new)
+- `toCSV(rows: Record<string,string|number>[])` — minimal CSV serializer with quoting.
+- `downloadCSV(filename, rows)` — triggers a browser download via Blob/URL.
+- Used by Data Meeting export. This is the only place full `studentNumber` is included.
 
-Add a helper `getStudentRiskLevel(student, benchmarks)` in `src/lib/studentRisk.ts` that returns `'well-below' | 'below' | 'at-or-above' | 'well-above' | 'unknown'` based on the student's most recent Acadience `scoreLabel` (Composite preferred, else latest). Treat manual `isHighNeed` as an override that forces "well-below".
+---
 
-Update Admin tab "At Risk (Data/Flag)" to count `well-below + below + isHighNeed`. Add a sibling KPI "Students Assessed" = students with ≥1 benchmark, and change "Avg Data/Student" denominator to **assessed students only** (so K–2 averages aren't diluted by 3–8).
+## 2. New component: `src/components/admin/LeadershipDashboard.tsx`
 
-Add a new Admin section **"Acadience Risk Distribution"** showing a stacked bar: Well Below / Below / At or Above / Well Above, with counts per grade (K, 1, 2). This is the missing "School Risk Profile" placeholder.
+Self-contained section rendered at the top of `AdminTab`. Owns its filter state and reads `useStudents()` + `useBenchmarks()`.
 
-### Fix 2 — Make Class Growth Trend work with Acadience
+### Filter bar (sticky row at top of the section)
 
-Replace the percentage-based aggregation with a **measure-aware trend**:
-- Add a measure dropdown above the chart (Composite / NWF-CLS / NWF-WWR / LNF / PSF / etc., populated from imported assessmentTypes).
-- Plot average `parseFloat(score)` (raw) for the selected measure over time (by benchmark window: BOY / MOY / EOY, fallback to month).
-- Auto-scale Y-axis (`domain={['auto', 'auto']}`) so raw scores like 103 aren't clipped.
-- Add an optional **Homeroom filter** (dropdown of the user's homerooms or "All") so admins can drill down.
+A single responsive grid of selects + toggles:
 
-When no measure is selected, default to "Composite" if present, otherwise the most common measure.
+- Grade (`all` + each grade present)
+- Homeroom (`all` + each homeroom present)
+- Gender (`all`, `M`, `F`, `X`, `Unknown / Not recorded`) — admin-only (always true here)
+- Window (`all`, `BOY`, `MOY`, `EOY`)
+- Measure (`all` + the seven standard measures actually present in data)
+- Status band (`all`, `at-or-above`, `approaching`, `below`, `well-below`)
+- Toggle: **No data only**
+- Toggle: **Focus students only**
+- "Reset filters" button
 
-### Fix 3 — Student Deep Dive for Acadience
+Filters compose: `filteredStudents` is derived by applying student-level filters (grade/homeroom/gender/focus); `filteredBenchmarks` is derived by intersecting with `filteredStudents` + window + measure. Status band filter applies to the per-student computed risk level.
 
-In the Deep Dive chart:
-- The existing assessment-type filter already exists — make it the primary filter (default to "Composite" when Acadience data is present).
-- Auto-scale Y-axis instead of `[0, 100]`.
-- Show `scoreLabel` (status badge) next to each tooltip point.
-- Sort dropdown by homeroom then initials so K–2 students cluster together and are findable.
+### Gender completeness card
 
-### Fix 4 — Insights filters for admins
+Small horizontal card immediately below the filter bar, ignoring student filters except `Active`:
 
-Add a small filter bar at the top of the Insights tab:
-- **Grade** (All, K, 1, 2, 3…)
-- **Homeroom** (All, then the school's homerooms)
+- "Gender recorded for **N / Total** active students" with a thin progress bar.
+- Subtext: "M: x · F: y · X: z · Unknown: u". Treats gender as "recorded" if the field is a non-empty string other than literal "unknown".
 
-Apply both filters to all charts (KPIs, Class Growth, Performance Distribution, Deep Dive list). For an admin, "All" is the default; for teachers, default to their assigned homerooms (existing behavior).
+### KPI card row
 
-### Files to change
+Eight `StatCard`s, all driven by the active filters (and current Window when set, otherwise "any window"):
 
-- `src/lib/studentRisk.ts` — new helper
-- `src/components/tabs/AdminTab.tsx` — risk KPI logic, new Acadience risk distribution chart, fix Avg Data/Student denominator
-- `src/components/tabs/InsightsTab.tsx` — measure-aware Class Growth Trend, grade+homeroom filter bar, auto-scale Y axes, default Composite, sorted student dropdown
-- `src/components/dashboard/InsightChart.tsx` — no change expected
+1. **Total active students** — count of `filteredStudents`.
+2. **Students with benchmark data** — distinct studentIds in `filteredBenchmarks`.
+3. **Students missing data** — `filteredStudents` − assessed.
+4. **% At/Above Benchmark** — across students whose latest scoped benchmark classifies as `at-or-above` or `well-above`.
+5. **% Near Benchmark** — `approaching`.
+6. **% Below / Well Below** — `below` + `well-below` (red emphasis).
+7. **High-need students** — `student.isHighNeed === true` within `filteredStudents`.
+8. **High-need w/o support plan** — high-need students with no `SupportPlan` doc. (See §5 for data source.)
 
-### Out of scope (will not touch)
+Plus a 9th compact card: **Multiple risk indicators** — students with `multipleBelowMeasures(...) ≥ 2`.
 
-- CSV import / mapping (it's working — 971 rows saved)
-- Student matching (the 9 unmatched rows for student 1093503 require adding that student to the roster)
-- Firestore rules
-- The student display format (`J.P.E. · 4F · #591`) is already in place
+### Heatmaps
 
-### Acceptance
+Built with a custom CSS-grid heatmap (no extra deps) — cell color interpolates a `hsl` red ramp on `% below + well-below`; cell shows percentage and `n=` count; tooltip via title attribute.
 
-- Admin tab shows non-zero "At Risk" reflecting Acadience well-below + below counts.
-- Avg Data/Student calculated against assessed students (K–2), giving a realistic number.
-- New Acadience Risk Distribution chart shows stacked bars by grade.
-- Insights "Class Growth Trend" renders an actual line for the selected measure (default Composite), with a working homeroom filter.
-- Selecting any K–2 student in Deep Dive renders their score history with auto-scaled Y axis and the assessment filter pre-set to Composite.
+1. **Grade × Measure heatmap** — rows = grades present, columns = `STANDARD_MEASURES` present.
+2. **Homeroom × Measure heatmap** — rows = homerooms present (sorted), columns = `STANDARD_MEASURES` present. Vertically scrollable beyond ~12 rows.
+
+Both respect the active Window filter (default "all" uses each student's most recent benchmark per measure).
+
+Cells with `n < 3` are rendered muted gray with the text "—" to avoid privacy/false-signal issues.
+
+### Leadership action lists
+
+A 3-column responsive grid of compact list cards. Each card shows up to 10 students with a "View all (N)" expander:
+
+1. **Well Below Benchmark** (latest scoped Composite or fallback) — sorted by latest date desc.
+2. **Below Benchmark** — same.
+3. **No data this window** — when Window filter is set: students with no benchmark in that window. When not set: students with zero benchmarks at all.
+4. **Multiple below-benchmark measures** — `multipleBelowMeasures ≥ 2`, sorted by count desc.
+5. **High need but no support plan**.
+6. **High need but no recent evidence/markbook entry** — no markbook entry in last 30 days.
+
+Each row uses `formatStudentDisplay(student)` plus a small risk badge and a measure/score chip when relevant. Clicking a row opens the existing student deep dive (we'll forward via a callback prop the parent can wire to `setSelectedStudent` if available; otherwise the row is a non-interactive summary in this first pass — see §6).
+
+### Data Meeting View
+
+Collapsible card titled "Data Meeting View". Inputs (independent of the top filter bar so a meeting can be focused without disrupting the dashboard):
+
+- Grade select
+- Homeroom select
+- Measure select (defaults to Composite)
+- Window select (defaults to most recent window present)
+
+Output:
+
+- Header line: "Showing N students needing support in {homeroom or grade} · {measure} · {window}".
+- Table with columns: Student (privacy-friendly via `formatStudentDisplay`), Grade, Homeroom, Status (risk badge), Latest Score, Date.
+- "Suggested groupings" — students grouped by status band (Well Below / Below / Near), each group shown as a chip stack of student labels; intent is to seed small-group instruction planning.
+- **Export button** — downloads `data-meeting_{measure}_{window}_{date}.csv` with columns: `studentNumber, initials, homeroom, grade, measure, window, score, scoreLabel, statusBand, date`. This is the one place full `studentNumber` is exposed (admin-only context).
+
+---
+
+## 3. Risk classification rules (no change in behavior, just enforced consistently)
+
+- All status decisions go through `classifyScoreLabel` / `getStudentRiskLevel`.
+- "Has data" is never used as a proxy for "doing well": the missing-data and below-benchmark KPIs are computed independently, and KPI percentages always use `assessedCount` as the denominator (not total roster) so K-2-only data is not diluted.
+
+---
+
+## 4. Privacy / labeling rules
+
+- Every student row in dashboard cards/lists/tables uses `formatStudentDisplay(student)` → `J.P.E. · 2A · #591`.
+- Full `studentNumber` appears only in:
+  - The Data Meeting CSV export (admin-initiated download).
+  - Existing import/debug surfaces (unchanged).
+- Heatmaps never display individual students.
+
+---
+
+## 5. Support plans data source
+
+We don't currently fetch SupportPlans in `AdminTab`. Add a lightweight one-off fetch inside `LeadershipDashboard`:
+
+- `useEffect` reads `collection('supportPlans')` filtered by `schoolId` (if rules require it; otherwise top-level) using `getDocs`, stored as `Set<studentId>` of students who have at least one plan.
+- Used only for the "High need w/o support plan" KPI and list. If the collection doesn't exist yet or returns an error, the card shows "—" and the list collapses with a "Support plans not available" hint (no console noise beyond a single warn). No new hook file is required for this read-only one-shot.
+
+If the codebase already has a `useSupportPlans` hook, we'll use that instead — to be confirmed when implementing.
+
+---
+
+## 6. Wiring to AdminTab
+
+`src/components/tabs/AdminTab.tsx`:
+
+- Import and render `<LeadershipDashboard />` as the first child of the returned fragment.
+- Move the existing top-of-tab filter bar (Grade/Homeroom/Measure/Window) and Risk Distribution chart into the new dashboard so there is one canonical filter bar (the existing chart becomes part of the dashboard's heatmap/KPI section). The Diagnostic Card and Class Deep Dive are kept under the new dashboard.
+- The student deep dive click-through is best-effort: if `AdminTab` already manages a `selectedStudent` state for the Class Deep Dive, we reuse it; otherwise list rows are non-interactive in this pass and a follow-up can wire navigation.
+
+---
+
+## 7. Files
+
+**New**
+- `src/lib/leadershipMetrics.ts`
+- `src/lib/leadershipExport.ts`
+- `src/components/admin/LeadershipDashboard.tsx`
+- `src/components/admin/Heatmap.tsx` — small reusable grid heatmap (rows × cols, value → color, value formatter, low-n masking).
+
+**Edited**
+- `src/components/tabs/AdminTab.tsx` — mount the dashboard, deduplicate the old filter bar / risk chart.
+
+No backend changes; no Firestore schema changes. Existing data already carries `scoreLabel`, `benchmarkWindow`, `assessmentType`, `gender`, `isHighNeed`, etc.
+
+---
+
+## 8. Out of scope (intentionally)
+
+- Backfilling gender for students whose roster import predates Gender-column support.
+- Editing support plans from the dashboard (cards are read-only).
+- Multi-school comparison — this is single-school only, scoped by `schoolId`.
