@@ -46,7 +46,7 @@ const BAND_BADGE: Record<RiskLevel, string> = {
 export function LeadershipDashboard() {
   const { students } = useStudents();
   const { benchmarks } = useBenchmarks();
-  const { markbookEntries } = useMarkbook();
+  const { entries: markbookEntries } = useMarkbook();
 
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const update = <K extends keyof FilterState>(k: K, v: FilterState[K]) => setFilters(p => ({ ...p, [k]: v }));
@@ -63,9 +63,9 @@ export function LeadershipDashboard() {
   const measuresPresent = useMemo(() => {
     const set = new Set<string>();
     enriched.forEach(e => set.add(e.measure));
-    return STANDARD_MEASURES.filter(m => set.has(m)).concat(
-      Array.from(set).filter(m => !STANDARD_MEASURES.includes(m as never)).sort()
-    );
+    const standard: string[] = STANDARD_MEASURES.filter(m => set.has(m));
+    const extra: string[] = Array.from(set).filter(m => !STANDARD_MEASURES.includes(m as never)).sort();
+    return [...standard, ...extra];
   }, [enriched]);
 
   // Apply student-level filters
