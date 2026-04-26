@@ -829,6 +829,11 @@ export function StudentsTab() {
         </CardContent>
       </Card>
 
+      {/* Server-side backfill (Admin SDK, bypasses rules) */}
+      {isAdmin && (
+        <ServerBackfillPanel onAfterRun={() => refetch()} />
+      )}
+
       {/* Whole-school Board Number Backfill */}
       {isAdmin && (
         <Card className="border-border/50 shadow-sm">
