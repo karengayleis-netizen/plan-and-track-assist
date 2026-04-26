@@ -122,21 +122,30 @@ export function ResultsStep({ result, rows, errorSummary, onDownloadErrors, onSa
             )}
           </div>
 
-          {onProbeWrite && result.importedRows === 0 && failedToSave === 0 && (
+          {onProbeWrite && (
             <div className="space-y-1.5">
               <Button size="sm" variant="outline" className="w-full" onClick={runProbe} disabled={probing}>
-                {probing ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Probing…</> : <><FlaskConical className="h-3 w-3 mr-1" /> Test write 1 row (surface raw error)</>}
+                {probing ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Probing…</> : <><FlaskConical className="h-3 w-3 mr-1" /> Test write 1 matched row</>}
               </Button>
               {probeResult && (
-                <div className={`text-xs font-mono rounded p-2 ${probeResult.ok ? 'bg-green-500/10 text-green-700 border border-green-500/30' : 'bg-destructive/10 text-destructive border border-destructive/30'}`}>
+                <div className={`text-xs font-mono rounded p-2 space-y-1 ${probeResult.ok ? 'bg-green-500/10 text-green-700 border border-green-500/30' : 'bg-destructive/10 text-destructive border border-destructive/30'}`}>
                   {probeResult.ok ? (
-                    <p>✓ Probe write SUCCEEDED. Database accepts writes — the bulk loop has a different issue. Re-run the import.</p>
+                    <p className="font-semibold">✓ Probe write SUCCEEDED — database accepts writes. The bulk loop has a different issue.</p>
                   ) : (
                     <>
                       <p className="font-semibold">✗ Probe write FAILED</p>
                       {probeResult.code && <p>code: <code className="bg-background/60 px-1 rounded">{probeResult.code}</code></p>}
-                      {probeResult.message && <p className="break-words mt-1">{probeResult.message}</p>}
+                      {probeResult.message && <p className="break-words">message: {probeResult.message}</p>}
                     </>
+                  )}
+                  {probeResult.rowNumber !== undefined && <p>row: <strong>{probeResult.rowNumber}</strong></p>}
+                  {probeResult.studentNumber && <p>studentNumber: <code className="bg-background/60 px-1 rounded">{probeResult.studentNumber}</code></p>}
+                  {probeResult.schoolIdUsed !== undefined && <p>schoolId: <code className="bg-background/60 px-1 rounded">{probeResult.schoolIdUsed || '(empty!)'}</code></p>}
+                  {probeResult.payload && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer hover:underline">payload (click to expand)</summary>
+                      <pre className="mt-1 bg-background/60 p-2 rounded overflow-auto max-h-48 whitespace-pre-wrap break-all">{JSON.stringify(probeResult.payload, null, 2)}</pre>
+                    </details>
                   )}
                 </div>
               )}
