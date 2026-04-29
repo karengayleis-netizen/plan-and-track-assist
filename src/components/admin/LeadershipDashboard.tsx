@@ -433,26 +433,79 @@ export function LeadershipDashboard() {
         <StatCard title="Multiple risk indicators" value={multiBelow} subtitle="≥2 below measures" icon={Layers} variant="purple" />
       </div>
 
+      {/* Measure glossary */}
+      <Card className="border-border/50 shadow-sm bg-muted/20">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm">Acadience measure glossary</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+            {Object.entries(MEASURE_GLOSSARY).map(([acr, def]) => (
+              <div key={acr} className="flex gap-2">
+                <dt className="font-mono font-semibold text-foreground shrink-0 w-20">{acr}</dt>
+                <dd className="text-muted-foreground">{def}</dd>
+              </div>
+            ))}
+          </dl>
+        </CardContent>
+      </Card>
+
       {/* Heatmaps */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Grade × Measure — % Below / Well Below</CardTitle>
-            <p className="text-xs text-muted-foreground">Latest score per student per measure {filters.window !== 'all' ? `· ${filters.window}` : '· any window'}. Cells with n&lt;3 hidden.</p>
-          </CardHeader>
-          <CardContent>
-            <Heatmap rowHeader="Grade" rows={presentGrades} cols={heatmapMeasureCols} data={gradeHeatmap} />
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Homeroom × Measure — % Below / Well Below</CardTitle>
-            <p className="text-xs text-muted-foreground">Same scope; scrolls vertically.</p>
-          </CardHeader>
-          <CardContent className="max-h-[420px] overflow-auto">
-            <Heatmap rowHeader="Homeroom" rows={presentHomerooms} cols={heatmapMeasureCols} data={homeroomHeatmap} />
-          </CardContent>
-        </Card>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Risk distribution by group</h3>
+            <p className="text-xs text-muted-foreground">Grade and Homeroom × Measure. Toggle the lens to see who needs support, who's on track, or both.</p>
+          </div>
+          <ToggleGroup
+            type="single"
+            value={heatmapMode}
+            onValueChange={v => v && setHeatmapMode(v as HeatmapMode)}
+            size="sm"
+            variant="outline"
+          >
+            <ToggleGroupItem value="risk" className="text-xs">At Risk</ToggleGroupItem>
+            <ToggleGroupItem value="success" className="text-xs">On Track</ToggleGroupItem>
+            <ToggleGroupItem value="mixed" className="text-xs">Mixed</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Grade × Measure — {heatmapTitleSuffix}</CardTitle>
+              <p className="text-xs text-muted-foreground">Latest score per student per measure {filters.window !== 'all' ? `· ${filters.window}` : '· any window'}. Cells with n&lt;3 hidden. Hover a column header for the acronym.</p>
+            </CardHeader>
+            <CardContent>
+              <Heatmap
+                rowHeader="Grade"
+                rows={presentGrades}
+                cols={heatmapMeasureCols}
+                data={gradeHeatmap}
+                mode={heatmapMode}
+                colTooltips={MEASURE_GLOSSARY}
+              />
+            </CardContent>
+          </Card>
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Homeroom × Measure — {heatmapTitleSuffix}</CardTitle>
+              <p className="text-xs text-muted-foreground">Same scope; scrolls vertically.</p>
+            </CardHeader>
+            <CardContent className="max-h-[420px] overflow-auto">
+              <Heatmap
+                rowHeader="Homeroom"
+                rows={presentHomerooms}
+                cols={heatmapMeasureCols}
+                data={homeroomHeatmap}
+                mode={heatmapMode}
+                colTooltips={MEASURE_GLOSSARY}
+              />
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Leadership lists */}
