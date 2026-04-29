@@ -291,6 +291,13 @@ export function LeadershipDashboard() {
     toast.success(`Exported ${rows.length} rows.`);
   };
 
+  // Heatmap view mode (shared across both heatmaps)
+  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('risk');
+  const heatmapTitleSuffix =
+    heatmapMode === 'success' ? '% At / Above Benchmark'
+    : heatmapMode === 'mixed' ? 'Band breakdown'
+    : '% Below / Well Below';
+
   return (
     <div className="space-y-6">
       {/* Header + filters */}
