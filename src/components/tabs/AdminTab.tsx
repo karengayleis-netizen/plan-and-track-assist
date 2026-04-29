@@ -14,17 +14,13 @@ import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { useClasses } from '@/hooks/useClasses';
 import { useStaff } from '@/hooks/useStaff';
 import { GRADES } from '@/types';
-import { Upload, Search, Sparkles, Loader2, Users, BarChart3, AlertTriangle, Activity, Settings, Plus, Trash2, Save, UserPlus, Check, X, Mail } from 'lucide-react';
+import { Upload, Search, Loader2, Users, BarChart3, AlertTriangle, Activity, Settings, Plus, Trash2, Save, UserPlus, Check, X, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatCard } from '@/components/dashboard';
 import { formatGradeDisplay } from '@/types/homeroom';
 import { getStudentRiskLevel, RISK_LABEL, RISK_COLOR, type RiskLevel } from '@/lib/studentRisk';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { LeadershipDashboard } from '@/components/admin/LeadershipDashboard';
-
-interface AnalyzeSchoolDataResponse {
-  recommendations: string;
-}
 
 interface LookupUserByEmailResponse {
   uid: string;
@@ -310,43 +306,6 @@ export function AdminTab() {
       toast.error(errorMessage);
     } finally {
       setIsLookingUpEmail(false);
-    }
-  };
-
-  const handleAnalyze = async () => {
-    setIsAnalyzing(true);
-    
-    try {
-      const analyzeSchoolData = httpsCallable<object, AnalyzeSchoolDataResponse>(
-        functions, 
-        'analyzeSchoolData'
-      );
-      
-      const atRiskStudents = students.filter(s => s.isHighNeed).map(s => ({
-        id: s.id,
-        studentNumber: s.studentNumber,
-        grade: s.grade,
-        homeroom: s.homeroom
-      }));
-      
-      const result = await analyzeSchoolData({
-        program: selectedProgram,
-        schoolStats: {
-          totalStudents,
-          totalBenchmarks,
-          atRiskCount,
-          avgDataPerStudent: parseFloat(avgDataPerStudent)
-        },
-        gradeAnalytics,
-        atRiskStudents
-      });
-      
-      setAiRecommendations(result.data.recommendations);
-      toast.success('AI analysis complete!');
-    } catch {
-      toast.error('Failed to analyze. Please try again.');
-    } finally {
-      setIsAnalyzing(false);
     }
   };
 
@@ -1123,97 +1082,46 @@ export function AdminTab() {
         </Card>
       </div>
 
-      {/* Tracked Students & AI Strategy */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle>Tracked Students (At-Risk)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead>Student</TableHead>
-                  <TableHead>Teacher</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Actions</TableHead>
+      {/* Tracked Students */}
+      <Card className="border-border/50 shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle>Tracked Students (At-Risk)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead>Student</TableHead>
+                <TableHead>Teacher</TableHead>
+                <TableHead>Reason</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {students.filter(s => s.isHighNeed).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    No at-risk students flagged.
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {students.filter(s => s.isHighNeed).length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
-                      No at-risk students flagged.
+              ) : (
+                students.filter(s => s.isHighNeed).map(student => (
+                  <TableRow key={student.id} className="hover:bg-muted/30">
+                    <TableCell className="font-medium">{student.studentNumber}</TableCell>
+                    <TableCell>{student.homeroom || '-'}</TableCell>
+                    <TableCell>
+                      <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded-full">Manual flag</span>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="outline" size="sm">View</Button>
                     </TableCell>
                   </TableRow>
-                ) : (
-                  students.filter(s => s.isHighNeed).map(student => (
-                    <TableRow key={student.id} className="hover:bg-muted/30">
-                      <TableCell className="font-medium">{student.studentNumber}</TableCell>
-                      <TableCell>{student.homeroom || '-'}</TableCell>
-                      <TableCell>
-                        <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded-full">Manual flag</span>
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm">View</Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/50 shadow-sm border-l-4 border-l-primary">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              AI Strategy (Peel/ON)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Select value={selectedProgram} onValueChange={setSelectedProgram}>
-                <SelectTrigger className="flex-1 focus:ring-primary">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fi">French Immersion</SelectItem>
-                  <SelectItem value="english">English Program</SelectItem>
-                  <SelectItem value="all">All Programs</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={handleAnalyze} disabled={isAnalyzing}>
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Analyze
-                  </>
-                )}
-              </Button>
-            </div>
-            
-            {aiRecommendations ? (
-              <div className="border border-primary/20 rounded-lg p-4 bg-primary/5">
-                <h4 className="font-medium mb-2 text-primary">AI Recommendations</h4>
-                <div className="text-sm whitespace-pre-wrap">{aiRecommendations}</div>
-              </div>
-            ) : (
-              <div className="border border-border/50 rounded-lg p-4 bg-muted/20">
-                <p className="text-muted-foreground text-sm">
-                  Click "Analyze" to generate AI-powered recommendations based on your school data.
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
