@@ -12,7 +12,19 @@ import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { useMarkbook } from '@/hooks/useMarkbook';
 import { StatCard } from '@/components/dashboard';
-import { Heatmap, type HeatmapCell } from './Heatmap';
+import { Heatmap, type HeatmapCell, type HeatmapMode } from './Heatmap';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Info } from 'lucide-react';
+
+const MEASURE_GLOSSARY: Record<string, string> = {
+  'FSF': 'First Sound Fluency — initial phoneme of a spoken word (Kindergarten, BOY/MOY)',
+  'LNF': 'Letter Naming Fluency — letters named per minute (K–1, indicator only)',
+  'PSF': 'Phoneme Segmentation Fluency — segmenting spoken words into sounds (K MOY → 1 MOY)',
+  'NWF-CLS': 'Nonsense Word Fluency · Correct Letter Sounds — sound-by-sound decoding (K EOY → 2)',
+  'NWF-WWR': 'Nonsense Word Fluency · Whole Words Read — blended whole-word decoding (1–2)',
+  'ORF': 'Oral Reading Fluency — words correct per minute on grade-level passage (1 MOY → 6)',
+  'Composite': 'Acadience Composite Score — overall risk indicator combining the grade/window sub-measures',
+};
 import { formatStudentDisplay } from '@/lib/studentDisplay';
 import { RISK_LABEL, type RiskLevel } from '@/lib/studentRisk';
 import {
