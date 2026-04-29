@@ -12,7 +12,19 @@ import { useStudents } from '@/hooks/useStudents';
 import { useBenchmarks } from '@/hooks/useBenchmarks';
 import { useMarkbook } from '@/hooks/useMarkbook';
 import { StatCard } from '@/components/dashboard';
-import { Heatmap, type HeatmapCell } from './Heatmap';
+import { Heatmap, type HeatmapCell, type HeatmapMode } from './Heatmap';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Info } from 'lucide-react';
+
+const MEASURE_GLOSSARY: Record<string, string> = {
+  'FSF': 'First Sound Fluency — initial phoneme of a spoken word (Kindergarten, BOY/MOY)',
+  'LNF': 'Letter Naming Fluency — letters named per minute (K–1, indicator only)',
+  'PSF': 'Phoneme Segmentation Fluency — segmenting spoken words into sounds (K MOY → 1 MOY)',
+  'NWF-CLS': 'Nonsense Word Fluency · Correct Letter Sounds — sound-by-sound decoding (K EOY → 2)',
+  'NWF-WWR': 'Nonsense Word Fluency · Whole Words Read — blended whole-word decoding (1–2)',
+  'ORF': 'Oral Reading Fluency — words correct per minute on grade-level passage (1 MOY → 6)',
+  'Composite': 'Acadience Composite Score — overall risk indicator combining the grade/window sub-measures',
+};
 import { formatStudentDisplay } from '@/lib/studentDisplay';
 import { RISK_LABEL, type RiskLevel } from '@/lib/studentRisk';
 import {
@@ -149,7 +161,7 @@ export function LeadershipDashboard() {
     return stats;
   }, [activeStudents]);
 
-  // Heatmaps — % below+well-below per (group, measure), using latest per (student, measure) within window scope.
+  // Heatmaps — band breakdown per (group, measure), using latest per (student, measure) within window scope.
   const buildHeatmap = (
     groupKeys: string[],
     groupOf: (studentId: string) => string | undefined
@@ -161,15 +173,21 @@ export function LeadershipDashboard() {
     const cols = STANDARD_MEASURES.filter(m => measuresPresent.includes(m));
     return groupKeys.map(g => {
       return cols.map(measure => {
-        let total = 0, below = 0;
+        let total = 0, below = 0, near = 0, atOrAbove = 0;
         for (const s of studentsBase) {
           if (groupOf(s.id) !== g) continue;
           const e = latest.get(`${s.id}|${measure}`);
           if (!e) continue;
           total++;
           if (e.risk === 'below' || e.risk === 'well-below') below++;
+          else if (e.risk === 'approaching') near++;
+          else if (e.risk === 'at-or-above' || e.risk === 'well-above') atOrAbove++;
         }
-        return { value: total > 0 ? pct(below, total) : null, count: total } as HeatmapCell;
+        return {
+          value: total > 0 ? pct(below, total) : null,
+          count: total,
+          bands: { below, near, atOrAbove },
+        } as HeatmapCell;
       });
     });
   };
@@ -272,6 +290,13 @@ export function LeadershipDashboard() {
     downloadCSV(`data-meeting_${dmMeasure}_${dmWindow}_${date}.csv`, rows);
     toast.success(`Exported ${rows.length} rows.`);
   };
+
+  // Heatmap view mode (shared across both heatmaps)
+  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('risk');
+  const heatmapTitleSuffix =
+    heatmapMode === 'success' ? '% At / Above Benchmark'
+    : heatmapMode === 'mixed' ? 'Band breakdown'
+    : '% Below / Well Below';
 
   return (
     <div className="space-y-6">
@@ -408,26 +433,79 @@ export function LeadershipDashboard() {
         <StatCard title="Multiple risk indicators" value={multiBelow} subtitle="≥2 below measures" icon={Layers} variant="purple" />
       </div>
 
+      {/* Measure glossary */}
+      <Card className="border-border/50 shadow-sm bg-muted/20">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm">Acadience measure glossary</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+            {Object.entries(MEASURE_GLOSSARY).map(([acr, def]) => (
+              <div key={acr} className="flex gap-2">
+                <dt className="font-mono font-semibold text-foreground shrink-0 w-20">{acr}</dt>
+                <dd className="text-muted-foreground">{def}</dd>
+              </div>
+            ))}
+          </dl>
+        </CardContent>
+      </Card>
+
       {/* Heatmaps */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Grade × Measure — % Below / Well Below</CardTitle>
-            <p className="text-xs text-muted-foreground">Latest score per student per measure {filters.window !== 'all' ? `· ${filters.window}` : '· any window'}. Cells with n&lt;3 hidden.</p>
-          </CardHeader>
-          <CardContent>
-            <Heatmap rowHeader="Grade" rows={presentGrades} cols={heatmapMeasureCols} data={gradeHeatmap} />
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Homeroom × Measure — % Below / Well Below</CardTitle>
-            <p className="text-xs text-muted-foreground">Same scope; scrolls vertically.</p>
-          </CardHeader>
-          <CardContent className="max-h-[420px] overflow-auto">
-            <Heatmap rowHeader="Homeroom" rows={presentHomerooms} cols={heatmapMeasureCols} data={homeroomHeatmap} />
-          </CardContent>
-        </Card>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Risk distribution by group</h3>
+            <p className="text-xs text-muted-foreground">Grade and Homeroom × Measure. Toggle the lens to see who needs support, who's on track, or both.</p>
+          </div>
+          <ToggleGroup
+            type="single"
+            value={heatmapMode}
+            onValueChange={v => v && setHeatmapMode(v as HeatmapMode)}
+            size="sm"
+            variant="outline"
+          >
+            <ToggleGroupItem value="risk" className="text-xs">At Risk</ToggleGroupItem>
+            <ToggleGroupItem value="success" className="text-xs">On Track</ToggleGroupItem>
+            <ToggleGroupItem value="mixed" className="text-xs">Mixed</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Grade × Measure — {heatmapTitleSuffix}</CardTitle>
+              <p className="text-xs text-muted-foreground">Latest score per student per measure {filters.window !== 'all' ? `· ${filters.window}` : '· any window'}. Cells with n&lt;3 hidden. Hover a column header for the acronym.</p>
+            </CardHeader>
+            <CardContent>
+              <Heatmap
+                rowHeader="Grade"
+                rows={presentGrades}
+                cols={heatmapMeasureCols}
+                data={gradeHeatmap}
+                mode={heatmapMode}
+                colTooltips={MEASURE_GLOSSARY}
+              />
+            </CardContent>
+          </Card>
+          <Card className="border-border/50 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Homeroom × Measure — {heatmapTitleSuffix}</CardTitle>
+              <p className="text-xs text-muted-foreground">Same scope; scrolls vertically.</p>
+            </CardHeader>
+            <CardContent className="max-h-[420px] overflow-auto">
+              <Heatmap
+                rowHeader="Homeroom"
+                rows={presentHomerooms}
+                cols={heatmapMeasureCols}
+                data={homeroomHeatmap}
+                mode={heatmapMode}
+                colTooltips={MEASURE_GLOSSARY}
+              />
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Leadership lists */}
