@@ -65,10 +65,6 @@ export function AdminTab() {
   
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   
-  // AI Strategy state
-  const [selectedProgram, setSelectedProgram] = useState('fi');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiRecommendations, setAiRecommendations] = useState('');
 
   // Load staff members on mount
   useEffect(() => {
