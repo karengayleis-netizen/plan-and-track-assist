@@ -161,7 +161,7 @@ export function LeadershipDashboard() {
     return stats;
   }, [activeStudents]);
 
-  // Heatmaps — % below+well-below per (group, measure), using latest per (student, measure) within window scope.
+  // Heatmaps — band breakdown per (group, measure), using latest per (student, measure) within window scope.
   const buildHeatmap = (
     groupKeys: string[],
     groupOf: (studentId: string) => string | undefined
@@ -173,15 +173,21 @@ export function LeadershipDashboard() {
     const cols = STANDARD_MEASURES.filter(m => measuresPresent.includes(m));
     return groupKeys.map(g => {
       return cols.map(measure => {
-        let total = 0, below = 0;
+        let total = 0, below = 0, near = 0, atOrAbove = 0;
         for (const s of studentsBase) {
           if (groupOf(s.id) !== g) continue;
           const e = latest.get(`${s.id}|${measure}`);
           if (!e) continue;
           total++;
           if (e.risk === 'below' || e.risk === 'well-below') below++;
+          else if (e.risk === 'approaching') near++;
+          else if (e.risk === 'at-or-above' || e.risk === 'well-above') atOrAbove++;
         }
-        return { value: total > 0 ? pct(below, total) : null, count: total } as HeatmapCell;
+        return {
+          value: total > 0 ? pct(below, total) : null,
+          count: total,
+          bands: { below, near, atOrAbove },
+        } as HeatmapCell;
       });
     });
   };
