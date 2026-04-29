@@ -127,7 +127,10 @@ export function Heatmap({
                   );
                 }
 
-                const v = cell.value ?? 0;
+                const baseV = cell.value ?? 0;
+                const v = mode === 'success' && cell.bands
+                  ? Math.round((cell.bands.atOrAbove / cell.count) * 100)
+                  : baseV;
                 const intensity = Math.min(1, Math.max(0, v / maxValue));
                 const bg = `hsl(var(${rampVar}) / ${(0.08 + intensity * 0.85).toFixed(2)})`;
                 const fg = intensity > 0.45 ? `hsl(var(${rampFgVar}))` : 'hsl(var(--foreground))';
