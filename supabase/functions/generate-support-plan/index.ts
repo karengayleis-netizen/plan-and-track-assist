@@ -67,7 +67,15 @@ const SYSTEM_PROMPT = `You are an expert Ontario elementary educator and educati
 
    - 'Teach Your Monster to Read' — Free browser-based phonics game; engaging for early readers, no license required.
 
-   - 'Google Read Along' — Free app for oral reading fluency practice with AI feedback; no license required.
+   - 'Google Read Along' — Free app for oral reading fluency practice with AI feedback; completely free, no license required.
+
+   - 'Starfall' — Free browser-based phonics and early literacy program; no license required; good for Kindergarten and Grade 1 students needing engaging independent practice.
+
+   - 'Phonics Hero' — Structured synthetic phonics program with progress tracking; free tier available with no license required; premium version requires subscription — flag if recommending premium features.
+
+   - 'Reading Eggs' — Comprehensive phonics through comprehension program; highly engaging and adaptive; requires a school subscription — flag this as a recommendation but note the teacher should confirm license availability with administration. If unavailable, suggest Starfall or Teach Your Monster to Read as free alternatives.
+
+   - 'Boom Cards' — Digital self-marking activity decks for phonics practice; free tier available with low-cost premium option. Quality varies by deck — recommend only teacher-vetted decks. Good for independent practice centres or early finishers.
 
    *Numeracy Resources:*
 
